@@ -47,8 +47,8 @@ match the repo's; an all-rights-reserved licence would need a special written gr
 
 - **Every push** (or Actions tab → Build mod → Run workflow): unit tests, `cargo horizon-mod check` and
   `cargo horizon-mod build`, then the package is **uploaded to the draft release `v<version>`** (`version` in
-  `horizon-mod.toml`) as `enemy_target_lock-<version>.hmod`, with its SHA-256 and a ready-to-paste
-  `[[versions]]` block for the registry entry. Each push replaces the draft's files and moves it to the new
+  `horizon-mod.toml`) as `enemy_target_lock-<version>.hmod`, with its SHA-256 (also in a `.sha256` file)
+  for the registry entry. Each push replaces the draft's files and moves it to the new
   commit, so the draft always holds the latest build. The tag is made when you publish the release.
 - **Pull requests:** the same build and checks, with the `.hmod` kept as a workflow artifact (Actions tab →
   the run → Artifacts), and no release.
@@ -138,9 +138,18 @@ Check the draft, then **publish it** and go on with step 4.
 
 ## Updates
 
-The same way: a new GitHub release, then a pull request that adds another `[[versions]]` record above the
-previous one, with its `version`, `file`, `sha256` and `changelog`. A published file never changes; publish a
-new version instead. Every native-mod version is reviewed, even an owner's.
+1. **Bump `version`** in `horizon-mod.toml` (e.g. `0.1.0` → `0.1.1`). A published file never changes, so every
+   update needs a new number.
+2. **Push.** The workflow builds it into a new draft release `v0.1.1`. Pushes keep refreshing that draft until
+   you publish it.
+3. **Publish the draft.**
+4. **In your fork of `horizon-mods`** (synced with upstream), edit `mods/enemy_target_lock.toml` and add a
+   `[[versions]]` record **above** the previous one, with the new `version`, `published` date, `file` and
+   `sha256` (from the release), and a `changelog`.
+5. **Open a pull request** linking the new release file. Every native-mod version is reviewed, even an owner's.
+
+When Horizon itself updates, `cargo horizon-mod update` lists what breaks in this mod and moves the pin in
+`horizon-mod.toml`; fix what it reports, bump `version` and push.
 
 ## Not yet confirmed
 

@@ -2,8 +2,7 @@
 #
 # - Every push (and Run workflow on the Actions tab): unit tests, `cargo horizon-mod check`,
 #   `cargo horizon-mod build`, then the package uploaded to the draft release `v<version>`
-#   (`version` in horizon-mod.toml), with its SHA-256 and a ready-to-paste `[[versions]]` block
-#   for the registry. Each push replaces the draft's files and moves it to the new commit.
+#   (`version` in horizon-mod.toml), with its SHA-256 for the registry entry. Each push replaces the draft's files and moves it to the new commit.
 #   Publish the draft by hand when it's ready; a published release is never changed.
 # - Pull requests: the same build and checks, kept as a workflow artifact, with no release.
 #
@@ -156,22 +155,14 @@ jobs:
           |---|---|
           | \`$NAME\` | \`$SHA256\` |
 
-          ### Registry entry
+          ### Submitting to the Horizon mod registry
 
-          Add this above the previous \`[[versions]]\` in \`mods/enemy_target_lock.toml\`
-          (see [docs/PUBLISH.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/PUBLISH.md)),
-          then link the file in the pull request:
+          After publishing this release, add a \`[[versions]]\` record for it to \`mods/enemy_target_lock.toml\`
+          in your fork of [horizon-rust/horizon-mods](https://github.com/horizon-rust/horizon-mods) (file and
+          SHA-256 above) and open a pull request that links the file:
           \`https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$NAME\`
 
-          \`\`\`toml
-          [[versions]]
-          version = "$VERSION"
-          published = "$(date -u +%F)"
-          game = "$GAME"
-          file = "$NAME"
-          sha256 = "$SHA256"
-          changelog = "Pinned to Horizon ${PIN:0:7} and Horizon Mixins ${MIXINS:0:7}."
-          \`\`\`
+          See [docs/PUBLISH.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/PUBLISH.md).
           EOF
 
           if gh release view "$TAG" > /dev/null 2>&1; then
