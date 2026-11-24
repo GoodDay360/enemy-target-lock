@@ -10,7 +10,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-modules=(ballistics camera cinematic config config_file input shapes smooth targeting view_lag)
+modules=(ballistics camera cinematic config config_file input server_config shapes smooth targeting view_lag)
 
 {
     echo '#![allow(dead_code)]'

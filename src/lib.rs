@@ -22,6 +22,9 @@
 //! - `config`: the settings, their defaults and the values in use
 //! - `config_file`: the commented config file in `config/`
 //! - `sync`: keeping the config file and the in-game settings page in step
+//! - `session`: where targeting is allowed (your own worlds, and LAN worlds whose host allows it)
+//! - `lan`: the consent handshake (a LAN host allowing friends to use lock-on)
+//! - `server_config`: a dedicated server's own switch (on by default)
 use std::sync::Mutex;
 
 use mod_api::{self, ClientHost, CrosshairTarget, EntityRef, Flow, Hooks};
@@ -35,8 +38,11 @@ mod config_file;
 mod deaths;
 mod hud;
 mod input;
+mod lan;
 mod lock;
 mod scan;
+mod server_config;
+mod session;
 mod shapes;
 mod smooth;
 mod sync;
@@ -51,6 +57,7 @@ struct Mod {
     cinematic: Mutex<cinematic::CinematicCamera>,
     view_lag: Mutex<view_lag::ViewLag>,
     settings_sync: sync::SettingsSync,
+    session: session::SessionGate,
     camera_clock: Mutex<smooth::FrameClock>,
 }
 
@@ -193,7 +200,16 @@ impl Mod {
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
     /// Put every setting on the mod's page in Options > Mods (its Config button).
-    fn register(&self, registrar: &mut dyn mod_api::Registrar, _context: &mod_api::RegistrationContext) {
+    fn register(&self, registrar: &mut dyn mod_api::Registrar, context: &mod_api::RegistrationContext) {
+        // A dedicated server has no settings page (and no Allow LAN Friends): it uses its own
+        // server config file instead.
+        let dedicated = context.dist() == mod_api::Dist::DedicatedServer;
+        server_config::set_dedicated(dedicated);
+        // The consent handshake (lan.rs), on both kinds of host.
+        lan::register(registrar);
+        if dedicated {
+            return;
+        }
         let defaults = config::Config::DEFAULT;
         for setting in config::SETTINGS {
             let label = config::label_key(setting.key);
@@ -210,6 +226,12 @@ impl Hooks for Mod {
         }
     }
 
+    /// The world this game hosts ticked: if the host changed Allow LAN Friends, tell the
+    /// friends who asked (once; otherwise just a comparison).
+    fn server_tick(&self, host: &mut dyn mod_api::ServerHost, _event: &mut mod_api::ServerTickEvent) {
+        lan::tell_friends_if_changed(host);
+    }
+
     /// The player changed a setting on the mod's page: use it and save it to the config file.
     fn setting_changed(&self, host: &mut dyn ClientHost, _event: &mut mod_api::SettingChangedEvent) {
         self.settings_sync.game_changed(host);
@@ -218,13 +240,24 @@ impl Hooks for Mod {
     /// The config file, written with the defaults when it's missing.
     fn register_configs(&self, _side: mod_api::HostSide, event: &mut mod_api::RegisterConfigsEvent) {
         let default = config_file::to_text(&config::Config::DEFAULT);
-        event.configs.push(mod_api::Config::new(sync::MOD_ID, mod_api::ConfigKind::Client, &default));
+        // Each kind of host gets only its own file: a game window the client settings (with
+        // Allow LAN Friends), a dedicated server its server switch.
+        if server_config::is_dedicated() {
+            event.configs.push(mod_api::Config::new(sync::MOD_ID, mod_api::ConfigKind::Server, server_config::DEFAULT_TEXT));
+        } else {
+            event.configs.push(mod_api::Config::new(sync::MOD_ID, mod_api::ConfigKind::Client, &default));
+        }
     }
 
     /// The config file was read at startup.
     fn config_loading(&self, _side: mod_api::HostSide, event: &mut mod_api::ConfigLoadingEvent) {
         if event.config.mod_id == sync::MOD_ID && event.config.file == config_file::FILE_NAME {
             self.settings_sync.file_read(&event.config.text);
+        }
+        if event.config.mod_id == sync::MOD_ID && event.config.file == server_config::FILE_NAME {
+            for warning in server_config::file_read(&event.config.text) {
+                eprintln!("{}: {} {warning}", sync::MOD_ID, server_config::FILE_NAME);
+            }
         }
     }
 
@@ -233,6 +266,11 @@ impl Hooks for Mod {
         if event.config.mod_id == sync::MOD_ID && event.config.file == config_file::FILE_NAME {
             self.settings_sync.file_read(&event.config.text);
         }
+        if event.config.mod_id == sync::MOD_ID && event.config.file == server_config::FILE_NAME {
+            for warning in server_config::file_read(&event.config.text) {
+                eprintln!("{}: {} {warning}", sync::MOD_ID, server_config::FILE_NAME);
+            }
+        }
     }
 
     /// Middle click toggles the lock. The click is swallowed only when it locks or
@@ -240,6 +278,11 @@ impl Hooks for Mod {
     /// (Left and right clicks while locked go to the target through `attack.rs`.)
     fn mouse_button_pre(&self, host: &mut dyn ClientHost, event: &mut mod_api::MouseButtonPreEvent) -> Flow {
         if event.button != input::MIDDLE_MOUSE_BUTTON || !event.pressed || !host.playing() {
+            return Flow::Continue;
+        }
+        if !self.session.allowed() {
+            // Singleplayer only: middle click does what it normally does here.
+            self.session.explain_once(host);
             return Flow::Continue;
         }
         if self.toggle_lock(host) {
@@ -271,7 +314,14 @@ impl Hooks for Mod {
 
     fn client_tick_pre(&self, host: &mut dyn ClientHost, _event: &mut mod_api::ClientTickPreEvent) {
         self.settings_sync.copy_to_game_if_pending(host);
-        if host.playing()
+        self.session.update(host);
+        if !self.session.allowed() {
+            // Singleplayer only: no lock, no assist, clicks go where the crosshair is.
+            if self.lock.is_locked() {
+                self.lock.with(|state| state.release());
+            }
+            self.deaths.take();
+        } else if host.playing()
             && let Some(view) = scan::player_view(host)
         {
             match self.lock.target() {

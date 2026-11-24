@@ -15,17 +15,28 @@ partway through moving to a new package format, so the steps may change.
 
 ## Fix first, or the submission will be held
 
-### 1. Targeting must be singleplayer-only
+### 1. Targeting only where the world's owner allowed it (done)
 
 The mod policy's cheat rules list **"aimbot or aim assist"** among the features that must "stay off on any
 server that has not allowed them (or stay singleplayer-only)". The lock-on aiming, the aim assist and the
-projectile aiming all fall under that. Horizon has no standard way yet for a server to opt in, so the
-practical fix is to make those features work only in singleplayer. The camera, HUD and settings can keep
-working everywhere.
+projectile aiming all fall under that. Horizon has no standard server opt-in yet (the policy says reviewers
+don't hold a mod over how its opt-in is built), so the mod has its own consent handshake (`session.rs`,
+`lan.rs`):
 
-This is one of the few reasons reviewers may block a submission (the others: harmful code, hidden network
-or data access, licence problems, Mojang data, hash or staging problems, broken packaging or a missing build
-proof, failing checks). Bugs are never a reason to hold a listing.
+| Where | Lock-on |
+|---|---|
+| Your own world (singleplayer) | on |
+| Your own world opened to LAN, with friends in it | on while **Allow LAN Friends** is on (the default) |
+| A friend's LAN world | on only if their copy of the mod answers "allowed" (their **Allow LAN Friends**) |
+| A dedicated server with the mod | on while `allow_lock_on` is `true` in its `config/enemy_target_lock-server.toml` (the default); its owner sets `false` to keep it off |
+| Any other server, Realms, a host without the mod | off |
+
+**Allow LAN Friends** is on by default: the host installed the mod and opened the world to LAN, and can turn it off to take the permission back. A friend's game asks the host once
+on joining (retrying only while there's no answer: after 1, 2, 4 and 8 seconds, then never). A host that says
+no disconnects the friend with the reason; a host that changes the setting tells everyone who asked, once. No
+answer (a host without the mod, any server) leaves lock-on off. Both messages are optional payloads and the mod
+stays `side = "client"`, so it never blocks joining a server that doesn't have it. Mention this in the entry's description and the pull
+request, so the reviewer finds it quickly.
 
 ### 2. Declare the licence (done)
 

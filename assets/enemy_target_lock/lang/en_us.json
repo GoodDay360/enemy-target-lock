@@ -5,6 +5,8 @@
   "enemy_target_lock.setting.lock_range.tooltip": "Only targets within this many blocks can be locked onto or switched to.",
   "enemy_target_lock.setting.pick_cone_degrees": "Lock Cone (degrees)",
   "enemy_target_lock.setting.pick_cone_degrees.tooltip": "A new lock only picks targets within this many degrees of where you look.",
+  "enemy_target_lock.setting.lan_friends": "Allow LAN Friends",
+  "enemy_target_lock.setting.lan_friends.tooltip": "Let friends who join your world over LAN, and also have this mod, use lock-on there. Turn it off to keep it to yourself: friends with the mod are then disconnected with the reason.",
   "enemy_target_lock.setting.max_lock_distance": "Release Distance",
   "enemy_target_lock.setting.max_lock_distance.tooltip": "The lock is released when the target gets farther than this many blocks away.",
   "enemy_target_lock.setting.max_hidden_seconds": "Release When Hidden (seconds)",
