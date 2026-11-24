@@ -5,12 +5,9 @@
 //! mobs are recognised by leaving out known non-mob type ids.
 
 use crate::camera;
+use crate::config;
 use crate::input::Side;
 
-/// Only targets within this distance (blocks) can be locked or switched to.
-pub const LOCK_RANGE: f64 = 24.0;
-/// A new lock only picks targets within this many degrees of the view direction.
-pub const PICK_CONE_DEGREES: f32 = 60.0;
 /// How much one block of distance counts against a target, in degrees of off-center.
 const DISTANCE_WEIGHT: f32 = 0.5;
 
@@ -48,7 +45,11 @@ const NON_MOB_SUFFIXES: &[&str] = &[
 ];
 
 /// Whether an entity type id (e.g. `minecraft:zombie`) can be locked onto.
+/// Players only when `include_players` is on.
 pub fn is_lockable(type_id: &str) -> bool {
+    if type_id == "minecraft:player" {
+        return config::get().include_players;
+    }
     !NON_MOB_TYPES.contains(&type_id) && !NON_MOB_SUFFIXES.iter().any(|suffix| type_id.ends_with(suffix))
 }
 
@@ -63,11 +64,12 @@ pub struct Candidate<T> {
 /// The target a new lock should pick: visible, in range, inside the pick cone,
 /// preferring the one nearest the center of the view, then the closest.
 pub fn pick_best<T: Copy>(yaw: f32, pitch: f32, candidates: &[Candidate<T>]) -> Option<T> {
+    let config = config::get();
     candidates
         .iter()
-        .filter(|c| c.visible && c.aim.distance <= LOCK_RANGE)
+        .filter(|c| c.visible && c.aim.distance <= config.lock_range)
         .map(|c| (c, camera::angle_between(yaw, pitch, c.aim.yaw, c.aim.pitch)))
-        .filter(|(_, off_center)| *off_center <= PICK_CONE_DEGREES)
+        .filter(|(_, off_center)| *off_center <= config.pick_cone_degrees)
         .map(|(c, off_center)| (c.target, off_center + c.aim.distance as f32 * DISTANCE_WEIGHT))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(target, _)| target)
@@ -76,9 +78,10 @@ pub fn pick_best<T: Copy>(yaw: f32, pitch: f32, candidates: &[Candidate<T>]) -> 
 /// The target to switch to: the nearest visible one on `side` of the current target's
 /// direction (`current_yaw`), within 90°. `None` when there is nothing on that side.
 pub fn pick_next<T: Copy>(current_yaw: f32, side: Side, candidates: &[Candidate<T>]) -> Option<T> {
+    let range = config::get().lock_range;
     candidates
         .iter()
-        .filter(|c| c.visible && c.aim.distance <= LOCK_RANGE)
+        .filter(|c| c.visible && c.aim.distance <= range)
         .map(|c| (c.target, camera::yaw_delta(current_yaw, c.aim.yaw)))
         .filter(|(_, delta)| match side {
             Side::Right => *delta > 1.0 && *delta <= 90.0,
@@ -91,9 +94,10 @@ pub fn pick_next<T: Copy>(current_yaw: f32, side: Side, candidates: &[Candidate<
 /// The target to move on to when the locked one dies: the closest visible one in range,
 /// in any direction.
 pub fn pick_nearest<T: Copy>(candidates: &[Candidate<T>]) -> Option<T> {
+    let range = config::get().lock_range;
     candidates
         .iter()
-        .filter(|c| c.visible && c.aim.distance <= LOCK_RANGE)
+        .filter(|c| c.visible && c.aim.distance <= range)
         .min_by(|a, b| a.aim.distance.total_cmp(&b.aim.distance))
         .map(|c| c.target)
 }

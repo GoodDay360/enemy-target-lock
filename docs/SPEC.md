@@ -75,7 +75,11 @@ The **player's real aim** and the **drawn camera** move separately:
     the player's view again.
 - The mouse doesn't turn the camera while locked: the frame's mouse sensitivity is muted
   (`calculate_player_turn`), so the mouse can't fight the lock. The saved option is unchanged.
-- A white **dot** is drawn on the target's chest (`hud.rs`).
+- A round **dot** is drawn on the target's chest (`hud.rs`): small, white, slightly see-through
+  (75%), 0.75 GUI pixels in radius, with a very thin dark outline (0.5) so it shows on bright
+  backgrounds. Size, opacity, colour and outline are settings. It's built from thin
+  wedges (`shapes.rs`), since the GUI draws only rectangles and quads; the pieces don't
+  overlap, so the transparency is even.
 - The normal **crosshair is hidden** while locked, so the dot is the only aim marker.
   It comes back as soon as the lock ends.
 - **Clicks go to the target** (`attack.rs`): left click attacks it and right click uses the
@@ -130,6 +134,45 @@ front-facing view keeps the normal camera.
 - The target has been out of sight (behind blocks) for **3 seconds** (60 ticks).
 - Middle click again.
 
+### Settings (`config.rs`, `config_file.rs`, `sync.rs`)
+Every tunable value can be changed in two places, and they stay in step:
+- **In-game:** Options > Mods > Enemy Target Lock > **Config**. Horizon draws the page
+  (sliders and toggles, each with a tooltip) and tells the mod when one changes
+  (`setting_changed`). The change applies immediately and the config file is rewritten.
+- **The config file:** `config/enemy_target_lock-client.toml` in the game folder. Horizon
+  writes it with the defaults and comments when it's missing (`register_configs`), and
+  reads it at startup and within a second of each save (`config_loading`,
+  `config_reloading`). Its values apply immediately and are copied into the in-game page
+  on the next tick.
+
+Startup config loading may read settings but not write them, so the copy into the page
+waits for the first tick. Writing the file makes Horizon read it again, but that read
+finds nothing new, so the two never bounce back and forth. If both change at once, the
+most recent change wins. In the file, an unknown key, a bad value or a number outside
+its range keeps the default and prints a warning to the game's output.
+
+The defaults are the values described in this spec.
+
+| Group | Settings |
+|---|---|
+| Targeting | Target Players, Lock Range, Lock Cone |
+| Lock | Release Distance, Release When Hidden, Switch Target on Kill |
+| Aim | Aim Height, Aim Speed, Max Turn Speed, Projectile Aim |
+| First person | First-Person Camera Speed |
+| Third person | Cinematic Third-Person Camera, Camera Distance / Shoulder / Height / Focus, Locked FOV, Camera Move / Turn Speed |
+| HUD | Lock Dot, Lock Dot Size / Opacity / Colour / Outline, Hide Crosshair While Locked |
+| Assist | Aim Assist, Aim Assist Range, Aim Assist Strength |
+
+- All settings are defined in one table, `config::SETTINGS`: file section, key, help text
+  (the file's comment, kept equal to the tooltip), slider range and step, and which
+  `Config` field it sets. Labels and tooltips are in
+  `assets/enemy_target_lock/lang/en_us.json`, as `enemy_target_lock.setting.<key>` and
+  `<key>.tooltip`.
+- Modules read the current values with `config::get()`. The defaults are `Config::DEFAULT`.
+- Adding a setting: add a field to `Config` and `DEFAULT`, a row to `SETTINGS`, and the two
+  lines to `en_us.json`. The unit tests fail if a key is invalid, a default is outside its
+  slider, a translation is missing, or the help text and tooltip differ.
+
 ### Subtle aim assist (when not locked)
 - It only works while the crosshair is already on a mob or player.
 - It turns at most **0.25° per tick** and only within **8°** of the target.
@@ -141,7 +184,7 @@ front-facing view keeps the normal camera.
 
 | File | Contents |
 |---|---|
-| `src/lib.rs` | Hooks: `mouse_button_pre`, `mouse_scrolling`, `calculate_player_turn`, `client_tick_pre`, `render_frame_pre`, `camera_pose`, `compute_fov`, `render_living_pre`, `gui_layer_pre`, `gui_render_post` |
+| `src/lib.rs` | Hooks: `mouse_button_pre`, `mouse_scrolling`, `calculate_player_turn`, `client_tick_pre`, `register`, `setting_changed`, `register_configs`, `config_loading`, `config_reloading`, `render_frame_pre`, `camera_pose`, `compute_fov`, `render_living_pre`, `gui_layer_pre`, `gui_render_post` |
 | `src/input.rs` | Middle button code, scroll direction → `Side`, muted mouse sensitivity |
 | `src/smooth.rs` | Per-frame position blending (`Track`, target velocity), easing (`ease_toward_at`, `ease_fraction`), turn speeds, `FrameClock` |
 | `src/ballistics.rs` | Projectile items, flight simulation, launch-angle solver with target lead (pure math) |
@@ -154,7 +197,11 @@ front-facing view keeps the normal camera.
 | `src/lock.rs` | `LockState` (target, hidden ticks, position track), unlock limits |
 | `src/camera.rs` | Aim point, angles, `step_toward`, `assist_step` |
 | `src/hud.rs` | The lock dot, crosshair layer id |
-| `src/config.rs` | *todo*: settings and config file |
+| `src/shapes.rs` | Round HUD shapes (disc, ring) built from quads, colour with opacity (pure math) |
+| `src/config.rs` | Settings: `Config` and defaults, the `SETTINGS` table, value text, `get()` |
+| `src/config_file.rs` | The commented config file: write (`to_text`) and read (`parse`) |
+| `src/sync.rs` | Keeping the config file and the in-game page in step (`SettingsSync`) |
+| `assets/enemy_target_lock/lang/en_us.json` | Settings labels and tooltips |
 
 ### Horizon API used
 | Need | API |
@@ -167,11 +214,14 @@ front-facing view keeps the normal camera.
 | Clicks go to the target | `host.targeting()` / `host.set_targeting(ClientTargeting { entity, .. })` |
 | Trailing / cinematic camera | `Hooks::camera_pose` (`position`, `yaw`, `pitch`, `partial`), `host.camera_type()` (`FirstPerson`, `ThirdPersonBack`) |
 | Held item / bow draw | `host.living(player)` → `living.hand_item(host, Hand)` → `stack.item().id(host)`; `host.local_item_use()` (`hand`) |
+| In-game settings | `Hooks::register` → `registrar.register_setting(SettingSpec::toggle / ::range(..).tooltip(..))`; `host.setting_bool(key)`, `host.setting_f64(key)`, `host.set_setting(mod_id, key, text)`; `Hooks::setting_changed` |
+| Config file | `Hooks::register_configs` (`event.configs.push(Config::new(mod_id, ConfigKind::Client, default))`), `Hooks::config_loading` / `config_reloading` (`event.config.text`); `host.config_files().write(&ConfigPath::new(name)?, bytes)` |
 | Cinematic FOV | `Hooks::compute_fov` (`degrees`) |
 | Stop the mouse turning | `Hooks::calculate_player_turn` (`mouse_sensitivity`, `cinematic_camera_enabled`) |
 | Target died | `Hooks::render_living_pre` (`entity.id`, `entity.death_time`; return `Flow::Continue`) |
 | Hide the crosshair | `Hooks::gui_layer_pre` (`layer == "minecraft:crosshair"`; return `Flow::Cancel`) |
-| Dot | `Hooks::gui_render_post` + `host.project(point)` + `DrawContext::fill` |
+| Dot | `Hooks::gui_render_post` + `host.project(point)` + `DrawContext::quad` |
+| Colour setting | `SettingSpec::color`, `host.setting_color(key)` |
 
 ## Still to do
 
@@ -179,8 +229,6 @@ front-facing view keeps the normal camera.
 - [ ] Better aim point for very tall or wide mobs (Ender Dragon, Ghast)
 
 ### Input, HUD, config, release
-- [ ] `config.rs`: range, cone, turn speed, aim height, include players, assist on/off,
-      loaded from a file with defaults
 - [ ] Let players rebind the lock (a registered key mapping) instead of a fixed middle click
 - [ ] HUD text: target name and distance
 - [ ] Sound or action-bar message when a lock starts or ends
@@ -203,11 +251,14 @@ front-facing view keeps the normal camera.
 - [x] Third-person cinematic lock camera: over the shoulder, eased in and out, narrower FOV, no wall clipping
 - [x] Projectiles aim for drop, drag and target movement
 - [x] Real aim is fast and precise; the drawn camera trails it smoothly (first and third person)
-- [x] Unit tests for the pure logic (31 tests)
+- [x] In-game settings page with every tunable value (`config.rs`)
+- [x] Commented config file kept in step with the in-game page (`config_file.rs`, `sync.rs`)
+- [x] Round, see-through lock dot with size, opacity, colour and outline settings
+- [x] Unit tests for the pure logic (47 tests)
 
 ## Testing
 
-- **Unit tests:** `ballistics.rs`, `camera.rs`, `cinematic.rs`, `input.rs`, `smooth.rs`, `targeting.rs` and `view_lag.rs` don't use the API, so they can
+- **Unit tests:** `ballistics.rs`, `camera.rs`, `cinematic.rs`, `config.rs`, `config_file.rs`, `input.rs`, `shapes.rs`, `smooth.rs`, `targeting.rs` and `view_lag.rs` don't use the API, so they can
   be tested without the game. `cargo test` doesn't work in this repo (it needs the SDK at
   `.horizon/sdk/`), so compile them together with `rustc`:
   ```sh
@@ -220,6 +271,9 @@ front-facing view keeps the normal camera.
   #[path = "$PWD/src/cinematic.rs"] mod cinematic;
   #[path = "$PWD/src/ballistics.rs"] mod ballistics;
   #[path = "$PWD/src/view_lag.rs"] mod view_lag;
+  #[path = "$PWD/src/config.rs"] mod config;
+  #[path = "$PWD/src/config_file.rs"] mod config_file;
+  #[path = "$PWD/src/shapes.rs"] mod shapes;
   EOF
   rustc --edition 2024 --test /tmp/etl-tests.rs -o /tmp/etl-tests && /tmp/etl-tests
   ```
@@ -241,12 +295,19 @@ front-facing view keeps the normal camera.
   - [ ] Arrows hit a target walking sideways
   - [ ] First person: the view glides smoothly while drawing a bow and when the target moves; no jumps
   - [ ] The lock dot stays on the target while the view is trailing
+  - [ ] The lock dot is round and see-through; changing its size, opacity, colour and outline
+        in-game shows immediately
   - [ ] Right click uses the held item on the target (e.g. trades with a locked villager)
   - [ ] Third person: the player faces the target, the camera drifts over the shoulder, the FOV narrows
   - [ ] Third person: locking, releasing and pressing F5 while locked all ease smoothly with no snap
   - [ ] Third person: the camera doesn't pass through walls in tight spaces
   - [ ] The camera glides with no shaking, at 30, 60 and uncapped fps, with both you and the target moving
   - [ ] The mouse doesn't move the view while locked, and works normally after release
+  - [ ] Options > Mods > Enemy Target Lock > Config opens, shows every setting with its tooltip,
+        and a change takes effect immediately (e.g. turn off Lock Dot while locked)
+  - [ ] `config/enemy_target_lock-client.toml` is created with comments; changing a setting
+        in-game rewrites it; saving an edit applies within a second and shows on the page
+  - [ ] A typo in the file keeps that setting's default and prints a warning
   - [ ] The crosshair disappears while locked and comes back after release (and after the last kill)
 
 ## Notes
