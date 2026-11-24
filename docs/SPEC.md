@@ -233,7 +233,6 @@ The defaults are the values described in this spec.
 - [ ] HUD text: target name and distance
 - [ ] Sound or action-bar message when a lock starts or ends
 - [ ] Run the in-game test checklist (below)
-- [ ] Optional: CI
 
 ### Done
 - [x] Split the code into modules
@@ -254,29 +253,18 @@ The defaults are the values described in this spec.
 - [x] In-game settings page with every tunable value (`config.rs`)
 - [x] Commented config file kept in step with the in-game page (`config_file.rs`, `sync.rs`)
 - [x] Round, see-through lock dot with size, opacity, colour and outline settings
-- [x] Unit tests for the pure logic (47 tests)
+- [x] Unit tests for the pure logic (47 tests, `scripts/unit-tests.sh`)
+- [x] CI: build the `.hmod` on every push and upload it to a draft release
 
 ## Testing
 
-- **Unit tests:** `ballistics.rs`, `camera.rs`, `cinematic.rs`, `config.rs`, `config_file.rs`, `input.rs`, `shapes.rs`, `smooth.rs`, `targeting.rs` and `view_lag.rs` don't use the API, so they can
-  be tested without the game. `cargo test` doesn't work in this repo (it needs the SDK at
-  `.horizon/sdk/`), so compile them together with `rustc`:
-  ```sh
-  cat > /tmp/etl-tests.rs <<EOF
-  #![allow(dead_code)]
-  #[path = "$PWD/src/camera.rs"] mod camera;
-  #[path = "$PWD/src/input.rs"] mod input;
-  #[path = "$PWD/src/targeting.rs"] mod targeting;
-  #[path = "$PWD/src/smooth.rs"] mod smooth;
-  #[path = "$PWD/src/cinematic.rs"] mod cinematic;
-  #[path = "$PWD/src/ballistics.rs"] mod ballistics;
-  #[path = "$PWD/src/view_lag.rs"] mod view_lag;
-  #[path = "$PWD/src/config.rs"] mod config;
-  #[path = "$PWD/src/config_file.rs"] mod config_file;
-  #[path = "$PWD/src/shapes.rs"] mod shapes;
-  EOF
-  rustc --edition 2024 --test /tmp/etl-tests.rs -o /tmp/etl-tests && /tmp/etl-tests
-  ```
+- **Unit tests:** the modules that don't use the API (`ballistics`, `camera`, `cinematic`, `config`,
+  `config_file`, `input`, `shapes`, `smooth`, `targeting`, `view_lag`) are tested without the game.
+  `cargo test` needs the SDK at `.horizon/sdk/`, so run them with `scripts/unit-tests.sh`, which
+  compiles them together with `rustc`. Add a new pure module to its list.
+- **CI:** `.github/workflows/build.yml` runs the unit tests, `cargo horizon-mod check` and
+  `cargo horizon-mod build` on every push and pull request, and on every push uploads the `.hmod`
+  to the draft release `v<version>` (see `docs/PUBLISH.md`).
 - **Build:** `horizon-launcher native-build . --instance "<instance>" --trust-native-code`
 - **In-game checklist:**
   - [ ] Middle click with several mobs in view locks the one nearest the center
