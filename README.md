@@ -32,6 +32,9 @@ the locked target. The owner of an integrated world can always use the mod. **Al
 whether guests can use it in that world and is off by default; dedicated-server `allow_lock_on` is also off
 by default.
 
+The first control in **Options → Mods → Enemy Target Lock → Config** is the
+**Enemy Target Lock** master toggle, above **Target Players**.
+
 ### Where lock-on works
 
 | Where you play | Lock-on (toggleable) | Who decides | Default |

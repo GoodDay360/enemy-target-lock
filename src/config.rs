@@ -13,6 +13,8 @@ use std::sync::RwLock;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Config {
     // Targeting
+    /// Master switch for all targeting, aim assistance, click redirection, and related effects.
+    pub enabled: bool,
     /// Only targets within this distance (blocks) can be locked or switched to.
     pub lock_range: f64,
     /// A new lock only picks targets within this many degrees of the view direction.
@@ -84,6 +86,7 @@ pub struct Config {
 
 impl Config {
     pub const DEFAULT: Self = Self {
+        enabled: true,
         lock_range: 24.0,
         pick_cone_degrees: 60.0,
         include_players: true,
@@ -198,6 +201,7 @@ macro_rules! range {
 
 /// Every setting on the page, in order.
 pub const SETTINGS: &[Setting] = &[
+    toggle!("targeting", "enabled", enabled, "Turn Enemy Target Lock and all of its targeting, aim, click, camera, and HUD effects on or off."),
     toggle!("targeting", "include_players", include_players, "Whether other players can be locked onto, not just mobs."),
     range!("targeting", "lock_range", lock_range, 4.0, 64.0, 1.0, "Only targets within this many blocks can be locked onto or switched to."),
     range!("targeting", "pick_cone_degrees", pick_cone_degrees, 5.0, 180.0, 5.0, "A new lock only picks targets within this many degrees of where you look."),
@@ -373,7 +377,7 @@ mod tests {
     #[test]
     fn every_config_field_has_a_setting() {
         // Changing each setting must change the config, so no field is left out of the page.
-        assert_eq!(SETTINGS.len(), 29);
+        assert_eq!(SETTINGS.len(), 30);
         let changed = from_values(|_| Some(false), |_| Some(f64::MAX), |_| Some(0x123456));
         assert_ne!(changed, Config::DEFAULT);
     }

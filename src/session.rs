@@ -16,12 +16,16 @@ use std::sync::Mutex;
 
 use mod_api::ClientHost;
 
+use crate::config;
 use crate::lan;
 
 /// Whether targeting may run.
 /// - `own_world`: this window owns the integrated server (`integrated_local`);
 /// - `host_allows`: what the server this window joined said.
-pub fn allowed(own_world: bool, host_allows: bool) -> bool {
+pub fn allowed(enabled: bool, own_world: bool, host_allows: bool) -> bool {
+    if !enabled {
+        return false;
+    }
     if own_world {
         true
     } else {
@@ -42,6 +46,11 @@ pub struct SessionGate {
 impl SessionGate {
     /// Each tick: work out whether targeting may run here.
     pub fn update(&self, host: &mut dyn ClientHost) {
+        if !config::get().enabled {
+            lan::forget();
+            self.allowed.store(false, Ordering::Relaxed);
+            return;
+        }
         let session = host.client_session();
         let Some(server) = session.client_server() else {
             // Left the world: forget its answer and the notice, so the next one starts fresh.
@@ -73,12 +82,12 @@ impl SessionGate {
         if !server.integrated_local {
             lan::ask_until_answered(host);
         }
-        let allowed = allowed(server.integrated_local, lan::host_allows());
+        let allowed = allowed(config::get().enabled, server.integrated_local, lan::host_allows());
         self.allowed.store(allowed, Ordering::Relaxed);
     }
 
     pub fn allowed(&self) -> bool {
-        if lan::revoked() {
+        if !config::get().enabled || lan::revoked() {
             self.allowed.store(false, Ordering::Relaxed);
             return false;
         }
@@ -93,6 +102,9 @@ impl SessionGate {
 
     /// The player tried to lock where it isn't allowed: tell them why, once a session.
     pub fn explain_once(&self, host: &mut dyn ClientHost) {
+        if !config::get().enabled {
+            return;
+        }
         if !self.told.swap(true, Ordering::Relaxed) {
             let line = "Enemy Target Lock: lock-on is off here. Enable Allow LAN Friends in your \
                         integrated world, or join a friend's LAN world where the host allows it.";
@@ -107,12 +119,13 @@ mod tests {
 
     #[test]
     fn integrated_world_owner_is_always_allowed() {
-        assert!(allowed(true, false), "the owner of the integrated world is trusted");
+        assert!(allowed(true, true, false), "the owner of the integrated world is trusted");
+        assert!(!allowed(false, true, false), "the master switch disables the owner too");
     }
 
     #[test]
     fn someone_elses_world() {
-        assert!(allowed(false, true), "a LAN host with the mod allowed it");
-        assert!(!allowed(false, false), "a host without the mod, or one that said no");
+        assert!(allowed(true, false, true), "a LAN host with the mod allowed it");
+        assert!(!allowed(true, false, false), "a host without the mod, or one that said no");
     }
 }

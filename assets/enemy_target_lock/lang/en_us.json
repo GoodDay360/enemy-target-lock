@@ -1,4 +1,6 @@
 {
+  "enemy_target_lock.setting.enabled": "Enemy Target Lock",
+  "enemy_target_lock.setting.enabled.tooltip": "Turn Enemy Target Lock and all of its targeting, aim, click, camera, and HUD effects on or off.",
   "enemy_target_lock.setting.include_players": "Target Players",
   "enemy_target_lock.setting.include_players.tooltip": "Whether other players can be locked onto, not just mobs.",
   "enemy_target_lock.setting.lock_range": "Lock Range",

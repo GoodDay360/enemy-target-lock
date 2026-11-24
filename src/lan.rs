@@ -122,7 +122,7 @@ pub fn register(registrar: &mut dyn Registrar) {
     });
     // Friend side: remember the host's answer (it stops the asking); on "no", leave.
     let answer = view.play_to_client_typed::<LockOnAnswer>(PayloadId(ANSWER_CHANNEL.into()), |answer, context| {
-        if answer.protocol.0 != PROTOCOL {
+        if answer.protocol.0 != PROTOCOL || !config::get().enabled {
             return Ok(());
         }
         HOST_ANSWERED.store(true, Ordering::Relaxed);

@@ -357,7 +357,7 @@ impl Hooks for Mod {
     /// Camera turning happens every frame, not every tick, so it's smooth at any frame rate.
     fn render_frame_pre(&self, host: &mut dyn ClientHost, event: &mut mod_api::RenderFramePreEvent) {
         let seconds = self.frame_clock.lock().map_or(0.0, |mut clock| clock.tick());
-        if lan::revoked() {
+        if !self.session.allowed() && self.lock.is_locked() {
             self.lock.with(|state| state.release());
             attack::direct_clicks_at(host, None);
         }

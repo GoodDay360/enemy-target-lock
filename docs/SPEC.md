@@ -155,9 +155,9 @@ The defaults are the values described in this spec.
 
 | Group | Settings |
 |---|---|
+| Targeting | Enemy Target Lock (master toggle, on by default), Target Players, Lock Range, Lock Cone |
 | Integrated-world owner | Always allowed |
 | LAN guests | Allow LAN Friends (off by default) |
-| Targeting | Target Players, Lock Range, Lock Cone |
 | Lock | Release Distance, Release When Hidden, Switch Target on Kill |
 | Aim | Aim Height, Aim Speed, Max Turn Speed, Projectile Aim |
 | First person | First-Person Camera Speed |
