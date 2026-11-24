@@ -1,8 +1,8 @@
 id = "enemy_target_lock"
 name = "Enemy Target Lock"
 version = "0.1.0"
-description = "Subtle aim correction while a hostile mob or player is under the crosshair."
-authors = []
+description = "Middle-click to lock the camera onto the mob nearest your view center; scroll to switch targets."
+authors = ["BloodyInside"]
 api = "0.2"
 side = "client"
 capabilities = ["registries"]
