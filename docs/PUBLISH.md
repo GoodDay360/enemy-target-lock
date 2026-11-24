@@ -28,7 +28,7 @@ don't hold a mod over how its opt-in is built), so the mod has its own consent h
 | Your own world (singleplayer) | on |
 | Your own world opened to LAN, with friends in it | on while **Allow LAN Friends** is on (the default) |
 | A friend's LAN world | on only if their copy of the mod answers "allowed" (their **Allow LAN Friends**) |
-| A dedicated server with the mod | on while `allow_lock_on` is `true` in its `config/enemy_target_lock-server.toml` (the default); its owner sets `false` to keep it off |
+| A dedicated server with the mod | off unless `allow_lock_on` is `true` in `config/enemy_target_lock-server.toml`; the default is off |
 | Any other server, Realms, a host without the mod | off |
 
 **Allow LAN Friends** is on by default: the host installed the mod and opened the world to LAN, and can turn it off to take the permission back. A friend's game asks the host once

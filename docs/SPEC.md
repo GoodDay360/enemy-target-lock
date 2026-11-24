@@ -183,7 +183,7 @@ they only run where the world's owner allowed it:
 | Your own world (singleplayer) | on |
 | Your own world opened to LAN, with friends in it | on while **Allow LAN Friends** is on (the default) |
 | A friend's LAN world | on only if their mod answers "allowed" |
-| A dedicated server with the mod | on while `allow_lock_on` is `true` in its `config/enemy_target_lock-server.toml` (the default); its owner sets `false` to keep it off |
+| A dedicated server with the mod | off unless `allow_lock_on` is `true` in `config/enemy_target_lock-server.toml`; the default is off |
 | Any other server, Realms, a host without the mod | off |
 
 - **Consent handshake** (`lan.rs`): a friend's game sends `enemy_target_lock:ask_lock_on` once on joining,
