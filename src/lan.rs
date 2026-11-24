@@ -52,6 +52,7 @@ pub struct AskLockOn {
 /// The host's answer, sent as a reply and again whenever the host changes its mind.
 #[derive(PayloadCodec)]
 pub struct LockOnAnswer {
+    pub protocol: VarInt,
     pub allowed: bool,
 }
 
@@ -62,8 +63,8 @@ const REFUSED: &str = "This world's host doesn't allow Enemy Target Lock. Ask th
                        Allow LAN Friends in its settings, or join without the mod.";
 
 /// The payloads' version (bump it if `AskLockOn` or `LockOnAnswer` change shape).
-const VERSION: &str = "1";
-const PROTOCOL: i32 = 1;
+const VERSION: &str = "2";
+const PROTOCOL: i32 = 2;
 /// How many times a friend asks before giving up, and the first gap (ticks, 20 per second),
 /// doubled after each try: asks at 0, 1, 2, 4 and 8 seconds after joining.
 const MAX_ASKS: u32 = 5;
@@ -75,6 +76,7 @@ static ANSWER: OnceLock<ToClient<LockOnAnswer>> = OnceLock::new();
 // Friend side: what the host said, and the asking schedule.
 static HOST_ALLOWS: AtomicBool = AtomicBool::new(false);
 static HOST_ANSWERED: AtomicBool = AtomicBool::new(false);
+static HOST_REVOKED: AtomicBool = AtomicBool::new(false);
 static ANSWER_TICKS_REMAINING: AtomicU32 = AtomicU32::new(0);
 static ASKS_SENT: AtomicU32 = AtomicU32::new(0);
 static TICKS_TO_ASK: AtomicU32 = AtomicU32::new(0);
@@ -86,9 +88,9 @@ static HEARTBEAT_TICKS_REMAINING: AtomicU32 = AtomicU32::new(ANSWER_HEARTBEAT_TI
 // Host side: who asked, and the answer they last got.
 struct HostState {
     asked: Vec<PlayerRef>,
-    last_answer: bool,
+    last_broadcast: bool,
 }
-static HOST: Mutex<HostState> = Mutex::new(HostState { asked: Vec::new(), last_answer: false });
+static HOST: Mutex<HostState> = Mutex::new(HostState { asked: Vec::new(), last_broadcast: false });
 
 /// Declare both messages (from `Hooks::register`).
 pub fn register(registrar: &mut dyn Registrar) {
@@ -96,26 +98,32 @@ pub fn register(registrar: &mut dyn Registrar) {
     let mut view = payloads.registrar(VERSION).optional();
 
     // Host side: answer, and remember who asked so a later change reaches them.
-    let ask = view.play_to_server_typed::<AskLockOn>(PayloadId(ASK_CHANNEL.into()), |_question, context| {
+    let ask = view.play_to_server_typed::<AskLockOn>(PayloadId(ASK_CHANNEL.into()), |question, context| {
         let Ok(server) = context.server_host() else {
             return Ok(());
         };
+        if question.protocol.0 != PROTOCOL {
+            return Ok(());
+        }
         let allowed = answer_here(server);
         if let Ok(player) = context.player() {
             let mut host = host_state();
             if !host.asked.contains(&player) {
                 host.asked.push(player);
             }
-            host.last_answer = allowed;
         }
         if let Some(answer) = ANSWER.get() {
-            let _ = answer.reply(context, &LockOnAnswer { allowed });
+            let _ = answer.reply(context, &LockOnAnswer { protocol: VarInt(PROTOCOL), allowed });
         }
         Ok(())
     });
     // Friend side: remember the host's answer (it stops the asking); on "no", leave.
     let answer = view.play_to_client_typed::<LockOnAnswer>(PayloadId(ANSWER_CHANNEL.into()), |answer, context| {
+        if answer.protocol.0 != PROTOCOL {
+            return Ok(());
+        }
         HOST_ANSWERED.store(true, Ordering::Relaxed);
+        HOST_REVOKED.store(!answer.allowed, Ordering::Relaxed);
         HOST_ALLOWS.store(answer.allowed, Ordering::Relaxed);
         ANSWER_TICKS_REMAINING.store(if answer.allowed { ANSWER_TTL_TICKS } else { 0 }, Ordering::Relaxed);
         if !answer.allowed
@@ -157,8 +165,8 @@ pub fn ask_until_answered(host: &mut dyn ClientHost) {
 pub fn tell_friends_if_changed(server: &mut dyn ServerHost) {
     let allowed = answer_here(server);
     let mut host = host_state();
-    let changed = host.last_answer != allowed;
-    host.last_answer = allowed;
+    let changed = host.last_broadcast != allowed;
+    host.last_broadcast = allowed;
     let Some(answer) = ANSWER.get() else {
         return;
     };
@@ -171,14 +179,22 @@ pub fn tell_friends_if_changed(server: &mut dyn ServerHost) {
     }
     if changed || heartbeat {
         // Failed sends identify players who left; drop their permission state.
-        host.asked.retain(|&player| answer.send(server, player, &LockOnAnswer { allowed }).is_ok());
+        host.asked.retain(|&player| answer.send(server, player, &LockOnAnswer { protocol: VarInt(PROTOCOL), allowed }).is_ok());
     }
 }
 
 /// Whether the host of the world this client is in said lock-on is allowed.
 pub fn host_allows() -> bool {
+    if HOST_REVOKED.load(Ordering::Relaxed) {
+        HOST_ALLOWS.store(false, Ordering::Relaxed);
+        return false;
+    }
     expire_permission();
     HOST_ALLOWS.load(Ordering::Relaxed)
+}
+
+pub fn revoked() -> bool {
+    HOST_REVOKED.load(Ordering::Relaxed)
 }
 
 fn expire_permission() {
@@ -199,6 +215,7 @@ fn expire_permission() {
 pub fn forget() {
     HOST_ALLOWS.store(false, Ordering::Relaxed);
     HOST_ANSWERED.store(false, Ordering::Relaxed);
+    HOST_REVOKED.store(false, Ordering::Relaxed);
     ANSWER_TICKS_REMAINING.store(0, Ordering::Relaxed);
     ASKS_SENT.store(0, Ordering::Relaxed);
     TICKS_TO_ASK.store(0, Ordering::Relaxed);

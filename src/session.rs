@@ -13,7 +13,8 @@
 //!
 //! The rest of the mod (settings, HUD) loads everywhere; it just has nothing to do.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use mod_api::ClientHost;
 
@@ -25,13 +26,9 @@ use crate::lan;
 /// - `players`: how many are listed in it (`None` when unknown, before anyone could join);
 /// - `lan_friends`: the host's **Allow LAN Friends** setting;
 /// - `host_allows`: what the server this window joined said.
-pub fn allowed(own_world: bool, players: Option<usize>, lan_friends: bool, host_allows: bool) -> bool {
+pub fn allowed(own_world: bool, private_world: bool, lan_friends: bool, host_allows: bool) -> bool {
     if own_world {
-        match players {
-            None => false,
-            Some(count) if count <= 1 => true,
-            Some(_) => lan_friends,
-        }
+        private_world || lan_friends
     } else {
         host_allows
     }
@@ -44,7 +41,7 @@ pub struct SessionGate {
     allowed: AtomicBool,
     told: AtomicBool,
     in_world: AtomicBool,
-    world_mode: AtomicU32,
+    connection: Mutex<Option<String>>,
 }
 
 impl SessionGate {
@@ -61,22 +58,49 @@ impl SessionGate {
             return;
         };
         self.in_world.store(true, Ordering::Relaxed);
-        let mode = if server.integrated_local { 1 } else { 2 };
-        if self.world_mode.swap(mode, Ordering::Relaxed) != mode {
+        let connection = if server.integrated_local {
+            server.save_folder.clone().unwrap_or_default()
+        } else {
+            server.address.clone().unwrap_or_default()
+        };
+        let connection_changed = {
+            let mut current = self.connection.lock().unwrap_or_else(|p| p.into_inner());
+            let changed = current.as_deref() != Some(connection.as_str()) || (connection.is_empty() && current.is_some());
+            if changed {
+                *current = (!connection.is_empty()).then_some(connection.clone());
+            }
+            changed
+        };
+        if connection_changed {
             lan::forget();
             self.told.store(false, Ordering::Relaxed);
         }
         if !server.integrated_local {
             lan::ask_until_answered(host);
         }
-        let session = host.client_session();
-        let players = session.client_tab_list().map(|list| list.entries.len());
-        let allowed = allowed(server.integrated_local, players, config::get().lan_friends, lan::host_allows());
+        let private_world = server.integrated_local
+            && server.save_folder.is_some()
+            && host.client_session().client_tab_list().is_some_and(|list| list.entries.len() == 1);
+        let lan_world = server.integrated_local
+            && server.save_folder.is_some()
+            && host.client_session().client_tab_list().is_some_and(|list| list.entries.len() > 1);
+        let lan_friends = lan_world && config::get().lan_friends;
+        let allowed = allowed(server.integrated_local, private_world, lan_friends, lan::host_allows());
         self.allowed.store(allowed, Ordering::Relaxed);
     }
 
     pub fn allowed(&self) -> bool {
+        if lan::revoked() {
+            self.allowed.store(false, Ordering::Relaxed);
+            return false;
+        }
         self.allowed.load(Ordering::Relaxed)
+    }
+
+    pub fn revoke(&self) {
+        lan::forget();
+        self.allowed.store(false, Ordering::Relaxed);
+        self.in_world.store(false, Ordering::Relaxed);
     }
 
     /// The player tried to lock where it isn't allowed: tell them why, once a session.
@@ -95,16 +119,16 @@ mod tests {
 
     #[test]
     fn your_own_world() {
-        assert!(allowed(true, Some(1), false, false), "singleplayer");
-        assert!(!allowed(true, None, false, false), "unknown solo status is disabled");
-        assert!(allowed(true, Some(3), true, false), "hosting LAN, friends allowed");
-        assert!(!allowed(true, Some(3), false, false), "hosting LAN, friends not allowed");
+        assert!(allowed(true, true, false, false), "singleplayer");
+        assert!(!allowed(true, false, false, false), "unknown private status is disabled");
+        assert!(allowed(true, false, true, false), "hosting LAN, friends allowed");
+        assert!(!allowed(true, false, false, false), "hosting LAN, friends not allowed");
     }
 
     #[test]
     fn someone_elses_world() {
-        assert!(allowed(false, Some(2), false, true), "a LAN host with the mod allowed it");
-        assert!(!allowed(false, Some(2), false, false), "a host without the mod, or one that said no");
-        assert!(!allowed(false, Some(1), true, false), "your own setting doesn't count elsewhere");
+        assert!(allowed(false, true, false, true), "a LAN host with the mod allowed it");
+        assert!(!allowed(false, true, false, false), "a host without the mod, or one that said no");
+        assert!(!allowed(false, true, true, false), "your own setting doesn't count elsewhere");
     }
 }

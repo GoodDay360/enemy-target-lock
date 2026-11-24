@@ -199,6 +199,10 @@ impl Mod {
 
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
+    fn client_disconnecting(&self, _host: &dyn mod_api::ClientHost, _event: &mut mod_api::ClientDisconnectingEvent) {
+        self.session.revoke();
+    }
+
     /// Put every setting on the mod's page in Options > Mods (its Config button).
     fn register(&self, registrar: &mut dyn mod_api::Registrar, context: &mod_api::RegistrationContext) {
         // A dedicated server has no settings page (and no Allow LAN Friends): it uses its own
@@ -295,6 +299,13 @@ impl Hooks for Mod {
 
     /// Scroll switches targets while locked (and doesn't change the hotbar slot).
     fn mouse_scrolling(&self, host: &mut dyn ClientHost, event: &mut mod_api::MouseScrollingEvent) -> Flow {
+        if !self.session.allowed() {
+            if self.lock.is_locked() {
+                self.lock.with(|state| state.release());
+            }
+            attack::direct_clicks_at(host, None);
+            return Flow::Continue;
+        }
         if !self.lock.is_locked() {
             return Flow::Continue;
         }
@@ -306,7 +317,7 @@ impl Hooks for Mod {
 
     /// While locked the lock steers the camera, so the mouse doesn't turn it.
     fn calculate_player_turn(&self, _host: &dyn ClientHost, event: &mut mod_api::CalculatePlayerTurnEvent) {
-        if self.lock.is_locked() {
+        if self.lock.is_locked() && self.session.allowed() {
             event.mouse_sensitivity = input::MUTED_MOUSE_SENSITIVITY;
             event.cinematic_camera_enabled = false; // or it replays buffered mouse motion
         }
@@ -343,7 +354,11 @@ impl Hooks for Mod {
     /// Camera turning happens every frame, not every tick, so it's smooth at any frame rate.
     fn render_frame_pre(&self, host: &mut dyn ClientHost, event: &mut mod_api::RenderFramePreEvent) {
         let seconds = self.frame_clock.lock().map_or(0.0, |mut clock| clock.tick());
-        if self.lock.is_locked() && host.playing() {
+        if lan::revoked() {
+            self.lock.with(|state| state.release());
+            attack::direct_clicks_at(host, None);
+        }
+        if self.lock.is_locked() && host.playing() && self.session.allowed() {
             self.turn_camera(host, event.world_partial_tick, seconds);
         }
     }
@@ -355,13 +370,17 @@ impl Hooks for Mod {
     fn camera_pose(&self, host: &dyn ClientHost, event: &mut mod_api::CameraPoseEvent) {
         let seconds = self.camera_clock.lock().map_or(0.0, |mut clock| clock.tick());
 
-        let lag_active = self.lock.is_locked() && scan::first_person(host);
+        let lag_active = self.lock.is_locked() && self.session.allowed() && scan::first_person(host);
         let aim = [event.yaw, event.pitch];
         let [yaw, pitch] = self.view_lag.lock().map_or(aim, |mut lag| lag.update(lag_active, aim, seconds));
         event.yaw = yaw;
         event.pitch = pitch;
 
-        let goal = self.cinematic_goal(host, event.partial);
+        let goal = if self.session.allowed() {
+            self.cinematic_goal(host, event.partial)
+        } else {
+            None
+        };
         let normal = cinematic::Pose { position: *event.position, yaw: event.yaw, pitch: event.pitch };
         let pose = self.cinematic.lock().map_or(normal, |mut cam| cam.update(goal, normal, seconds));
         if pose != normal {
