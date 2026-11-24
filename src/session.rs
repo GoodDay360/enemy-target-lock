@@ -4,9 +4,8 @@
 //! as aim assistance, which many servers forbid (and the Horizon mod registry requires
 //! such features to stay off on servers that haven't allowed them). So they run:
 //!
-//! - **in your own world** (singleplayer): always;
-//! - **in your own world opened to LAN** with friends in it: when **Allow LAN Friends** is
-//!   on, since you are the host allowing it;
+//! - **in your own integrated world**: when **Allow LAN Friends** is on. The API does not expose
+//!   whether an integrated world is private or open to LAN, so the setting is the explicit opt-in;
 //! - **in a friend's LAN world**: when their copy of the mod answered "allowed" to the
 //!   consent handshake (`lan.rs`);
 //! - **anywhere else** (servers, Realms, hosts without the mod): never.
@@ -23,12 +22,11 @@ use crate::lan;
 
 /// Whether targeting may run.
 /// - `own_world`: this window runs the world (`integrated_local`);
-/// - `players`: how many are listed in it (`None` when unknown, before anyone could join);
-/// - `lan_friends`: the host's **Allow LAN Friends** setting;
+/// - `lan_friends`: the host's explicit **Allow LAN Friends** opt-in;
 /// - `host_allows`: what the server this window joined said.
-pub fn allowed(own_world: bool, private_world: bool, lan_friends: bool, host_allows: bool) -> bool {
+pub fn allowed(own_world: bool, lan_friends: bool, host_allows: bool) -> bool {
     if own_world {
-        private_world || lan_friends
+        lan_friends
     } else {
         host_allows
     }
@@ -78,14 +76,7 @@ impl SessionGate {
         if !server.integrated_local {
             lan::ask_until_answered(host);
         }
-        let private_world = server.integrated_local
-            && server.save_folder.is_some()
-            && host.client_session().client_tab_list().is_some_and(|list| list.entries.len() == 1);
-        let lan_world = server.integrated_local
-            && server.save_folder.is_some()
-            && host.client_session().client_tab_list().is_some_and(|list| list.entries.len() > 1);
-        let lan_friends = lan_world && config::get().lan_friends;
-        let allowed = allowed(server.integrated_local, private_world, lan_friends, lan::host_allows());
+        let allowed = allowed(server.integrated_local, config::get().lan_friends, lan::host_allows());
         self.allowed.store(allowed, Ordering::Relaxed);
     }
 
@@ -106,8 +97,8 @@ impl SessionGate {
     /// The player tried to lock where it isn't allowed: tell them why, once a session.
     pub fn explain_once(&self, host: &mut dyn ClientHost) {
         if !self.told.swap(true, Ordering::Relaxed) {
-            let line = "Enemy Target Lock: lock-on is off here. It works in your own worlds, and in a \
-                        friend's LAN world when they have the mod and allow it.";
+            let line = "Enemy Target Lock: lock-on is off here. Enable Allow LAN Friends in your \
+                        integrated world, or join a friend's LAN world where the host allows it.";
             let _ = host.chat_line(mod_api::Text::literal(line));
         }
     }
@@ -118,17 +109,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn your_own_world() {
-        assert!(allowed(true, true, false, false), "singleplayer");
-        assert!(!allowed(true, false, false, false), "unknown private status is disabled");
-        assert!(allowed(true, false, true, false), "hosting LAN, friends allowed");
-        assert!(!allowed(true, false, false, false), "hosting LAN, friends not allowed");
+    fn integrated_world_requires_explicit_opt_in() {
+        assert!(!allowed(true, false, false), "unknown private status is disabled");
+        assert!(allowed(true, true, false), "explicit host opt-in");
     }
 
     #[test]
     fn someone_elses_world() {
-        assert!(allowed(false, true, false, true), "a LAN host with the mod allowed it");
-        assert!(!allowed(false, true, false, false), "a host without the mod, or one that said no");
-        assert!(!allowed(false, true, true, false), "your own setting doesn't count elsewhere");
+        assert!(allowed(false, false, true), "a LAN host with the mod allowed it");
+        assert!(!allowed(false, false, false), "a host without the mod, or one that said no");
+        assert!(!allowed(false, true, false), "your own setting doesn't count elsewhere");
     }
 }

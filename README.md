@@ -28,22 +28,21 @@ stay off.
 
 The listing describes the complete behavior: it can **target mobs and players**; **automatically adjust real
 aim and projectile aim** while locked or nudging aim while not locked; and **redirect left/right clicks** to
-the locked target. Automatic features and multiplayer targeting are disabled unless the current world is
-your own or the host has explicitly granted permission. The resulting multiplayer defaults are **off**:
-LAN friends and dedicated-server `allow_lock_on` both require affirmative opt-in.
+the locked target. The API cannot distinguish a private integrated world from one opened to LAN, so targeting
+in your integrated world also requires affirmative **Allow LAN Friends** permission. The resulting
+multiplayer defaults are **off**: LAN and dedicated-server `allow_lock_on` both require affirmative opt-in.
 
 ### Where lock-on works
 
 | Where you play | Lock-on (toggleable) | Who decides | Default |
 |---|---|---|---|
-| Singleplayer (your own world) | ✅ | you | always on |
-| Your world opened to LAN, friends present | ✅ / ❌ | you, the host: **Allow LAN Friends** (in-game Config); off also turns it off for you while friends are there | off |
+| Your integrated world (private or opened to LAN) | ✅ / ❌ | you: **Allow LAN Friends** (in-game Config), explicit opt-in required because private status is not exposed | off |
 | A friend's LAN world, **host has the mod** | ✅ / ❌ | the host's **Allow LAN Friends** | off |
 | A dedicated server, **server has the mod** | ✅ / ❌ | the server owner: `allow_lock_on` in `config/enemy_target_lock-server.toml` | off |
 | Any server or LAN host **without the mod** (public servers, Realms, vanilla) | ❌ off | — | always off |
 
-Permission comes from the host installing the mod. A server without the mod never allows it, and each host
-can turn it off with one switch.
+Permission requires the host to install the mod and explicitly opt in. A server without the mod never
+allows it, and each host can revoke it with one switch.
 
 ### How the host's permission is checked (consent handshake)
 
@@ -57,7 +56,8 @@ can turn it off with one switch.
 | 4 | Host changes its switch | Its game sends the new answer once to everyone who asked (a "no" disconnects them). |
 | 5 | Your game leaves the world | The answer is forgotten; the next world is asked anew. |
 
-There's no polling: after the answer, nothing is sent unless the host changes its switch.
+The host sends periodic permission heartbeats so a lost revocation/update cannot leave a stale
+grant active indefinitely.
 
 ### Behaviour when lock-on is off
 

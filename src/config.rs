@@ -21,8 +21,8 @@ pub struct Config {
     pub include_players: bool,
 
     // Multiplayer
-    /// When your world is open to LAN, let friends with the mod use lock-on (and keep it on
-    /// for you while they're there). Off by default: the host must explicitly enable it.
+    /// Explicitly allow targeting in your integrated world and for friends who join over LAN.
+    /// The API cannot confirm whether your integrated world is private, so this is off by default.
     pub lan_friends: bool,
 
     // Lock
@@ -201,7 +201,7 @@ pub const SETTINGS: &[Setting] = &[
     toggle!("targeting", "include_players", include_players, "Whether other players can be locked onto, not just mobs."),
     range!("targeting", "lock_range", lock_range, 4.0, 64.0, 1.0, "Only targets within this many blocks can be locked onto or switched to."),
     range!("targeting", "pick_cone_degrees", pick_cone_degrees, 5.0, 180.0, 5.0, "A new lock only picks targets within this many degrees of where you look."),
-    toggle!("multiplayer", "lan_friends", lan_friends, "Let friends who join your world over LAN, and also have this mod, use lock-on there. Turn it off to keep it to yourself: friends with the mod are then disconnected with the reason."),
+    toggle!("multiplayer", "lan_friends", lan_friends, "Explicitly allow targeting in your integrated world and for friends who join over LAN with this mod. The API cannot confirm whether your world is private, so this is off by default. Turning it off revokes permission from guests."),
     range!("lock", "max_lock_distance", max_lock_distance, 4.0, 128.0, 1.0, "The lock is released when the target gets farther than this many blocks away."),
     range!("lock", "max_hidden_seconds", max_hidden_seconds, 0.0, 30.0, 0.5, "The lock is released after the target has been behind blocks this long."),
     toggle!("lock", "switch_on_death", switch_on_death, "When the target dies, lock onto the nearest other one instead of releasing."),

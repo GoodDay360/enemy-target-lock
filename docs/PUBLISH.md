@@ -25,15 +25,14 @@ don't hold a mod over how its opt-in is built), so the mod has its own consent h
 
 | Where | Lock-on |
 |---|---|
-| Your own world (singleplayer) | on |
-| Your own world opened to LAN, with friends in it | on while **Allow LAN Friends** is on (the default) |
+| Your integrated world (private or opened to LAN) | off unless **Allow LAN Friends** is explicitly enabled; the API does not expose authoritative private/LAN status |
 | A friend's LAN world | on only if their copy of the mod answers "allowed" (their **Allow LAN Friends**) |
 | A dedicated server with the mod | off unless `allow_lock_on` is `true` in `config/enemy_target_lock-server.toml`; the default is off |
 | Any other server, Realms, a host without the mod | off |
 
-**Allow LAN Friends** is on by default: the host installed the mod and opened the world to LAN, and can turn it off to take the permission back. A friend's game asks the host once
-on joining (retrying only while there's no answer: after 1, 2, 4 and 8 seconds, then never). A host that says
-no disconnects the friend with the reason; a host that changes the setting tells everyone who asked, once. No
+**Allow LAN Friends** is off by default and must be enabled as explicit permission for the integrated world and LAN guests. The API does not expose whether an integrated world is private or open to LAN, so it cannot infer private solo play from the tab list. A friend's game asks the host on joining
+(retrying only while there's no answer: after 1, 2, 4 and 8 seconds, then never). A host that says
+no disconnects the friend with the reason; a host that changes the setting sends the update to everyone who asked. Periodic heartbeats expire permission if updates are lost. No
 answer (a host without the mod, any server) leaves lock-on off. Both messages are optional payloads and the mod
 stays `side = "client"`, so it never blocks joining a server that doesn't have it. Mention this in the entry's description and the pull
 request, so the reviewer finds it quickly.

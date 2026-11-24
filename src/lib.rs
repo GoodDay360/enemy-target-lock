@@ -22,7 +22,7 @@
 //! - `config`: the settings, their defaults and the values in use
 //! - `config_file`: the commented config file in `config/`
 //! - `sync`: keeping the config file and the in-game settings page in step
-//! - `session`: where targeting is allowed (your own worlds, and LAN worlds whose host allows it)
+//! - `session`: where targeting is allowed (integrated worlds with explicit opt-in, or remote worlds whose host allows it)
 //! - `lan`: the consent handshake (a LAN host allowing friends to use lock-on)
 //! - `server_config`: a dedicated server's own switch (off by default)
 use std::sync::Mutex;
@@ -285,7 +285,10 @@ impl Hooks for Mod {
             return Flow::Continue;
         }
         if !self.session.allowed() {
-            // Singleplayer only: middle click does what it normally does here.
+            if self.lock.is_locked() {
+                self.lock.with(|state| state.release());
+            }
+            attack::direct_clicks_at(host, None);
             self.session.explain_once(host);
             return Flow::Continue;
         }
@@ -392,6 +395,9 @@ impl Hooks for Mod {
 
     /// The FOV narrows as the cinematic camera blends in.
     fn compute_fov(&self, _host: &dyn ClientHost, event: &mut mod_api::ComputeFovEvent) {
+        if !self.session.allowed() {
+            return;
+        }
         let blend = self.cinematic.lock().map_or(0.0, |cam| cam.blend());
         if blend > 0.0 {
             event.degrees *= 1.0 + (config::get().fov_scale - 1.0) * blend;
@@ -401,7 +407,7 @@ impl Hooks for Mod {
     /// Watch for mobs playing their death animation, so the lock can move on from a dead target.
     /// Never cancels: the mob is drawn as usual.
     fn render_living_pre(&self, host: &dyn ClientHost, event: &mut mod_api::RenderLivingPreEvent) -> Flow {
-        if self.lock.is_locked() && event.entity.death_time > 0 {
+        if self.session.allowed() && self.lock.is_locked() && event.entity.death_time > 0 {
             if let Some(entity) = host.entity(event.entity.id) {
                 self.deaths.note_dying(entity);
             }
@@ -411,13 +417,16 @@ impl Hooks for Mod {
 
     /// The crosshair is hidden while locked; the lock dot takes its place.
     fn gui_layer_pre(&self, _host: &dyn ClientHost, event: &mut mod_api::GuiLayerPreEvent) -> Flow {
-        let hide = self.lock.is_locked() && config::get().hide_crosshair && event.layer == hud::CROSSHAIR_LAYER;
+        let hide = self.session.allowed()
+            && self.lock.is_locked()
+            && config::get().hide_crosshair
+            && event.layer == hud::CROSSHAIR_LAYER;
         if hide { Flow::Cancel } else { Flow::Continue }
     }
 
     /// A dot marks the locked target, at the same blended position the camera follows.
     fn gui_render_post(&self, host: &dyn ClientHost, event: &mut mod_api::GuiRenderPostEvent) {
-        if event.gui_hidden || !self.lock.is_locked() || !config::get().lock_dot {
+        if event.gui_hidden || !self.session.allowed() || !self.lock.is_locked() || !config::get().lock_dot {
             return;
         }
         let partial_tick = host.camera().map_or(1.0, |camera| camera.partial_tick);
