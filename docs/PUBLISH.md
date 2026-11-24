@@ -54,20 +54,21 @@ match the repo's; an all-rights-reserved licence would need a special written gr
 
 ## Automatic build and draft release
 
-`.github/workflows/build.yml` does steps 1 to 3 below on GitHub:
+`.github/workflows/build.yml` does steps 1 to 3 below on GitHub. It runs **only on a push to the `build`
+branch**, so ordinary pushes to `main` don't build:
 
-- **Every push** (or Actions tab → Build mod → Run workflow): unit tests, `cargo horizon-mod check` and
-  `cargo horizon-mod build`, then the package is **uploaded to the draft release `v<version>`** (`version` in
-  `horizon-mod.toml`) as `enemy_target_lock-<version>.hmod`, with its SHA-256 (also in a `.sha256` file)
-  for the registry entry. Each push replaces the draft's files and moves it to the new
-  commit, so the draft always holds the latest build. The tag is made when you publish the release.
-- **Pull requests:** the same build and checks, with the `.hmod` kept as a workflow artifact (Actions tab →
-  the run → Artifacts), and no release.
-- **Pushing a tag** `v<version>` also builds and drafts; the tag must match `version` in `horizon-mod.toml`.
+```sh
+git push origin main:build      # build what's on main
+```
+
+It runs the unit tests, `cargo horizon-mod check` and `cargo horizon-mod build`, then uploads
+`enemy_target_lock-<version>.hmod` and its SHA-256 (also in a `.sha256` file) to the **draft release
+`v<version>`** (`version` in `horizon-mod.toml`). Each build replaces the draft's files and moves it to the new
+commit; the tag is made when you publish the release.
 
 The tool is built from the Horizon commit the registry's reviewers use (their `.github/horizon-rev`), and
 cached. The SDK and Cargo's files are cached too, so later runs are much faster than the first. Once
-`v<version>` is published it's never changed: later pushes fail at the upload step until you bump
+`v<version>` is published it's never changed: later builds fail at the upload step until you bump
 `version` in `horizon-mod.toml`, which starts a new draft.
 
 Check the draft, then **publish it** and go on with step 4.
@@ -151,8 +152,8 @@ Check the draft, then **publish it** and go on with step 4.
 
 1. **Bump `version`** in `horizon-mod.toml` (e.g. `0.1.0` → `0.1.1`). A published file never changes, so every
    update needs a new number.
-2. **Push.** The workflow builds it into a new draft release `v0.1.1`. Pushes keep refreshing that draft until
-   you publish it.
+2. **Push to `build`** (`git push origin main:build`). The workflow builds it into a new draft release
+   `v0.1.1`. Later pushes to `build` keep refreshing that draft until you publish it.
 3. **Publish the draft.**
 4. **In your fork of `horizon-mods`** (synced with upstream), edit `mods/enemy_target_lock.toml` and add a
    `[[versions]]` record **above** the previous one, with the new `version`, `published` date, `file` and

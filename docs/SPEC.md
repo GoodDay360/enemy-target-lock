@@ -291,7 +291,7 @@ they only run where the world's owner allowed it:
 - [x] Commented config file kept in step with the in-game page (`config_file.rs`, `sync.rs`)
 - [x] Round, see-through lock dot with size, opacity, colour and outline settings
 - [x] Unit tests for the pure logic (47 tests, `scripts/unit-tests.sh`)
-- [x] CI: build the `.hmod` on every push and upload it to a draft release
+- [x] CI: build the `.hmod` on a push to `build` and upload it to a draft release
 
 ## Testing
 
@@ -299,9 +299,9 @@ they only run where the world's owner allowed it:
   `config_file`, `input`, `shapes`, `smooth`, `targeting`, `view_lag`) are tested without the game.
   `cargo test` needs the SDK at `.horizon/sdk/`, so run them with `scripts/unit-tests.sh`, which
   compiles them together with `rustc`. Add a new pure module to its list.
-- **CI:** `.github/workflows/build.yml` runs the unit tests, `cargo horizon-mod check` and
-  `cargo horizon-mod build` on every push and pull request, and on every push uploads the `.hmod`
-  to the draft release `v<version>` (see `docs/PUBLISH.md`).
+- **CI:** `.github/workflows/build.yml` runs only on a push to the `build` branch
+  (`git push origin main:build`): the unit tests, `cargo horizon-mod check` and `cargo horizon-mod build`,
+  then the `.hmod` uploaded to the draft release `v<version>` (see `docs/PUBLISH.md`).
 - **Build:** `horizon-launcher native-build . --instance "<instance>" --trust-native-code`
 - **In-game checklist:**
   - [ ] Middle click with several mobs in view locks the one nearest the center
