@@ -8,12 +8,13 @@
 //!    asks again after 1, 2, 4 and 8 seconds, then never again (a host without the mod
 //!    gets five tiny messages in all).
 //! 2. **The host answers** and remembers who asked. Its answer:
-//!    - a world hosted from a game window (LAN): the **Allow LAN Friends** setting (on by
-//!      default: the host installed the mod and opened the world; off takes it back);
-//!    - a dedicated server: `allow_lock_on` in its server config file (on by default:
-//!      the owner installed the mod on the server; false takes it back; `server_config.rs`).
+//!    - a world hosted from a game window (LAN): the **Allow LAN Friends** setting (off by
+//!      default; true is affirmative permission);
+//!    - a dedicated server: `allow_lock_on` in its server config file (off by default;
+//!      true is affirmative permission; `server_config.rs`).
 //! 3. **When the host changes its answer**, it sends the new answer once to everyone who
-//!    asked. Nothing else is ever sent: no polling.
+//!    asked. A heartbeat also refreshes affirmative answers, and stale affirmative updates
+//!    expire instead of granting lasting permission.
 //! 4. **"No" means leave.** A friend whose host answers "not allowed" (or later turns it
 //!    off) is disconnected with a message saying why: that host doesn't want the mod in
 //!    their world. An answer ends the asking either way; "no" is never asked again.
@@ -74,8 +75,13 @@ static ANSWER: OnceLock<ToClient<LockOnAnswer>> = OnceLock::new();
 // Friend side: what the host said, and the asking schedule.
 static HOST_ALLOWS: AtomicBool = AtomicBool::new(false);
 static HOST_ANSWERED: AtomicBool = AtomicBool::new(false);
+static ANSWER_TICKS_REMAINING: AtomicU32 = AtomicU32::new(0);
 static ASKS_SENT: AtomicU32 = AtomicU32::new(0);
 static TICKS_TO_ASK: AtomicU32 = AtomicU32::new(0);
+
+const ANSWER_TTL_TICKS: u32 = 600;
+const ANSWER_HEARTBEAT_TICKS: u32 = 300;
+static HEARTBEAT_TICKS_REMAINING: AtomicU32 = AtomicU32::new(ANSWER_HEARTBEAT_TICKS);
 
 // Host side: who asked, and the answer they last got.
 struct HostState {
@@ -109,8 +115,9 @@ pub fn register(registrar: &mut dyn Registrar) {
     });
     // Friend side: remember the host's answer (it stops the asking); on "no", leave.
     let answer = view.play_to_client_typed::<LockOnAnswer>(PayloadId(ANSWER_CHANNEL.into()), |answer, context| {
-        HOST_ALLOWS.store(answer.allowed, Ordering::Relaxed);
         HOST_ANSWERED.store(true, Ordering::Relaxed);
+        HOST_ALLOWS.store(answer.allowed, Ordering::Relaxed);
+        ANSWER_TICKS_REMAINING.store(if answer.allowed { ANSWER_TTL_TICKS } else { 0 }, Ordering::Relaxed);
         if !answer.allowed
             && let Ok(client) = context.client_host()
         {
@@ -150,26 +157,49 @@ pub fn ask_until_answered(host: &mut dyn ClientHost) {
 pub fn tell_friends_if_changed(server: &mut dyn ServerHost) {
     let allowed = answer_here(server);
     let mut host = host_state();
-    if host.last_answer == allowed {
-        return;
-    }
+    let changed = host.last_answer != allowed;
     host.last_answer = allowed;
     let Some(answer) = ANSWER.get() else {
         return;
     };
-    // Players who left fail to send; drop them.
-    host.asked.retain(|&player| answer.send(server, player, &LockOnAnswer { allowed }).is_ok());
+    let remaining = HEARTBEAT_TICKS_REMAINING.load(Ordering::Relaxed);
+    let heartbeat = remaining == 0;
+    if heartbeat {
+        HEARTBEAT_TICKS_REMAINING.store(ANSWER_HEARTBEAT_TICKS, Ordering::Relaxed);
+    } else {
+        HEARTBEAT_TICKS_REMAINING.store(remaining - 1, Ordering::Relaxed);
+    }
+    if changed || heartbeat {
+        // Failed sends identify players who left; drop their permission state.
+        host.asked.retain(|&player| answer.send(server, player, &LockOnAnswer { allowed }).is_ok());
+    }
 }
 
 /// Whether the host of the world this client is in said lock-on is allowed.
 pub fn host_allows() -> bool {
+    expire_permission();
     HOST_ALLOWS.load(Ordering::Relaxed)
+}
+
+fn expire_permission() {
+    if !HOST_ANSWERED.load(Ordering::Relaxed) {
+        HOST_ALLOWS.store(false, Ordering::Relaxed);
+        ANSWER_TICKS_REMAINING.store(0, Ordering::Relaxed);
+        return;
+    }
+    let remaining = ANSWER_TICKS_REMAINING.load(Ordering::Relaxed);
+    if remaining == 0 {
+        HOST_ALLOWS.store(false, Ordering::Relaxed);
+    } else {
+        ANSWER_TICKS_REMAINING.store(remaining - 1, Ordering::Relaxed);
+    }
 }
 
 /// Friend side: forget the last answer (on leaving a world), so the next host is asked anew.
 pub fn forget() {
     HOST_ALLOWS.store(false, Ordering::Relaxed);
     HOST_ANSWERED.store(false, Ordering::Relaxed);
+    ANSWER_TICKS_REMAINING.store(0, Ordering::Relaxed);
     ASKS_SENT.store(0, Ordering::Relaxed);
     TICKS_TO_ASK.store(0, Ordering::Relaxed);
 }

@@ -1,7 +1,7 @@
 id = "enemy_target_lock"
 name = "Enemy Target Lock"
 version = "0.1.0"
-description = "Middle-click to lock the camera onto the mob nearest your view center; scroll to switch targets."
+description = "Lock onto, aim at, and redirect clicks toward mobs or players; multiplayer LAN/dedicated targeting is off by default and needs host permission."
 authors = ["GoodDay360"]
 license = "MIT"
 license_url = "https://github.com/GoodDay360/enemy-target-lock/blob/main/LICENSE"

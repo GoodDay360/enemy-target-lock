@@ -13,7 +13,7 @@
 //!
 //! The rest of the mod (settings, HUD) loads everywhere; it just has nothing to do.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use mod_api::ClientHost;
 
@@ -27,7 +27,11 @@ use crate::lan;
 /// - `host_allows`: what the server this window joined said.
 pub fn allowed(own_world: bool, players: Option<usize>, lan_friends: bool, host_allows: bool) -> bool {
     if own_world {
-        players.is_none_or(|count| count <= 1) || lan_friends
+        match players {
+            None => false,
+            Some(count) if count <= 1 => true,
+            Some(_) => lan_friends,
+        }
     } else {
         host_allows
     }
@@ -40,6 +44,7 @@ pub struct SessionGate {
     allowed: AtomicBool,
     told: AtomicBool,
     in_world: AtomicBool,
+    world_mode: AtomicU32,
 }
 
 impl SessionGate {
@@ -56,6 +61,11 @@ impl SessionGate {
             return;
         };
         self.in_world.store(true, Ordering::Relaxed);
+        let mode = if server.integrated_local { 1 } else { 2 };
+        if self.world_mode.swap(mode, Ordering::Relaxed) != mode {
+            lan::forget();
+            self.told.store(false, Ordering::Relaxed);
+        }
         if !server.integrated_local {
             lan::ask_until_answered(host);
         }
@@ -86,7 +96,7 @@ mod tests {
     #[test]
     fn your_own_world() {
         assert!(allowed(true, Some(1), false, false), "singleplayer");
-        assert!(allowed(true, None, false, false));
+        assert!(!allowed(true, None, false, false), "unknown solo status is disabled");
         assert!(allowed(true, Some(3), true, false), "hosting LAN, friends allowed");
         assert!(!allowed(true, Some(3), false, false), "hosting LAN, friends not allowed");
     }

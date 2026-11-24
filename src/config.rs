@@ -22,8 +22,7 @@ pub struct Config {
 
     // Multiplayer
     /// When your world is open to LAN, let friends with the mod use lock-on (and keep it on
-    /// for you while they're there). On by default: installing the mod and opening the world to
-    /// LAN is the host's choice; turning this off takes the permission back.
+    /// for you while they're there). Off by default: the host must explicitly enable it.
     pub lan_friends: bool,
 
     // Lock
@@ -89,7 +88,7 @@ impl Config {
         pick_cone_degrees: 60.0,
         include_players: true,
 
-        lan_friends: true,
+        lan_friends: false,
 
         max_lock_distance: 32.0,
         max_hidden_seconds: 3.0,

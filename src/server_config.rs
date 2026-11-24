@@ -1,8 +1,8 @@
 //! The dedicated-server switch: `config/enemy_target_lock-server.toml`.
 //!
 //! On a dedicated server with this mod installed, players with the mod get lock-on while
-//! `allow_lock_on` is `true`, **the default**: installing the mod on the server is the
-//! owner's choice, and `false` takes it back. (A world hosted from a game window uses the
+//! `allow_lock_on` is `false`, **the default**: installing the mod on the server does not
+//! grant permission by itself. (A world hosted from a game window uses the
 //! in-game **Allow LAN Friends** setting instead; see `lan.rs`.)
 //!
 //! Only a dedicated server has this file, and only a game window has Allow LAN Friends:
@@ -22,10 +22,10 @@ pub const DEFAULT_TEXT: &str = "\
 # Players who also have the mod can use lock-on on this server while this is true.
 # Lock-on and aim assist count as aim assistance: set it to false to keep them off here,
 # for example on a public server. Players without the mod are never affected.
-allow_lock_on = true
+allow_lock_on = false
 ";
 
-static ALLOW: AtomicBool = AtomicBool::new(true);
+static ALLOW: AtomicBool = AtomicBool::new(false);
 static DEDICATED: AtomicBool = AtomicBool::new(false);
 
 /// Record whether this process is a dedicated server (from `Hooks::register`, which runs first).
@@ -50,10 +50,10 @@ pub fn file_read(text: &str) -> Vec<String> {
     warnings
 }
 
-/// `allow_lock_on` from the file's text (`true`, the default, when missing; a value other
+/// `allow_lock_on` from the file's text (`false`, the default, when missing; a value other
 /// than `true`/`false` keeps it off, since the owner clearly meant to change something).
 pub fn parse(text: &str) -> (bool, Vec<String>) {
-    let mut allow = true;
+    let mut allow = false;
     let mut warnings = Vec::new();
     for (index, raw) in text.lines().enumerate() {
         let line = raw.split_once('#').map_or(raw, |(before, _)| before).trim();
@@ -78,9 +78,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn on_by_default() {
-        assert_eq!(parse(DEFAULT_TEXT), (true, vec![]));
-        assert_eq!(parse(""), (true, vec![]));
+    fn off_by_default() {
+        assert_eq!(parse(DEFAULT_TEXT), (false, vec![]));
+        assert_eq!(parse(""), (false, vec![]));
     }
 
     #[test]

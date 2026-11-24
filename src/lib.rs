@@ -24,7 +24,7 @@
 //! - `sync`: keeping the config file and the in-game settings page in step
 //! - `session`: where targeting is allowed (your own worlds, and LAN worlds whose host allows it)
 //! - `lan`: the consent handshake (a LAN host allowing friends to use lock-on)
-//! - `server_config`: a dedicated server's own switch (on by default)
+//! - `server_config`: a dedicated server's own switch (off by default)
 use std::sync::Mutex;
 
 use mod_api::{self, ClientHost, CrosshairTarget, EntityRef, Flow, Hooks};
