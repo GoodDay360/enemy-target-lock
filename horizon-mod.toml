@@ -1,7 +1,7 @@
 id = "enemy_target_lock"
 name = "Enemy Target Lock"
 version = "0.1.0"
-description = "Lock onto, aim at, and redirect clicks toward mobs or players. Multiplayer is off by default; integrated worlds and servers require explicit permission."
+description = "Lock onto, aim at, and redirect clicks toward mobs or players. The integrated-world owner is always allowed; LAN guests and dedicated servers require explicit permission. Clients disconnect from servers without a compatible permission handshake."
 authors = ["GoodDay360"]
 license = "MIT"
 license_url = "https://github.com/GoodDay360/enemy-target-lock/blob/main/LICENSE"

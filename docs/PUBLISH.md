@@ -25,17 +25,20 @@ don't hold a mod over how its opt-in is built), so the mod has its own consent h
 
 | Where | Lock-on |
 |---|---|
-| Your integrated world (private or opened to LAN) | off unless **Allow LAN Friends** is explicitly enabled; the API does not expose authoritative private/LAN status |
-| A friend's LAN world | on only if their copy of the mod answers "allowed" (their **Allow LAN Friends**) |
+| Your integrated world | on for its owner |
+| A friend's LAN world | on only if their copy of the mod answers "allowed" (their **Allow LAN Friends**, off by default) |
 | A dedicated server with the mod | off unless `allow_lock_on` is `true` in `config/enemy_target_lock-server.toml`; the default is off |
 | Any other server, Realms, a host without the mod | off |
 
-**Allow LAN Friends** is off by default and must be enabled as explicit permission for the integrated world and LAN guests. The API does not expose whether an integrated world is private or open to LAN, so it cannot infer private solo play from the tab list. A friend's game asks the host on joining
-(retrying only while there's no answer: after 1, 2, 4 and 8 seconds, then never). A host that says
-no disconnects the friend with the reason; a host that changes the setting sends the update to everyone who asked. Periodic heartbeats expire permission if updates are lost. No
-answer (a host without the mod, any server) leaves lock-on off. Both messages are optional payloads and the mod
-stays `side = "client"`, so it never blocks joining a server that doesn't have it. Mention this in the entry's description and the pull
-request, so the reviewer finds it quickly.
+**Allow LAN Friends** is off by default and controls LAN guests; the owner is always allowed in their own
+integrated world. A friend's game asks the host on joining. A definite
+`UnsupportedPeer` result (no compatible permission channel) disconnects immediately; transient negotiation
+failures retry after 1, 2, 4 and 8 seconds. A host that says no disconnects the friend with the reason; a host
+that changes the setting sends the update to everyone who asked. Periodic heartbeats expire permission if
+updates are lost. A peer that supports the channel but never answers leaves lock-on off. Both messages are
+optional payloads and the mod stays `side = "client"`: the server doesn't require the mod, and clients without
+it still join normally. Mention this in the entry's description and the pull request, so the reviewer finds it
+quickly.
 
 ### 2. Declare the licence (done)
 

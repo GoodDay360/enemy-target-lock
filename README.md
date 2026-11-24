@@ -28,21 +28,22 @@ stay off.
 
 The listing describes the complete behavior: it can **target mobs and players**; **automatically adjust real
 aim and projectile aim** while locked or nudging aim while not locked; and **redirect left/right clicks** to
-the locked target. The API cannot distinguish a private integrated world from one opened to LAN, so targeting
-in your integrated world also requires affirmative **Allow LAN Friends** permission. The resulting
-multiplayer defaults are **off**: LAN and dedicated-server `allow_lock_on` both require affirmative opt-in.
+the locked target. The owner of an integrated world can always use the mod. **Allow LAN Friends** controls
+whether guests can use it in that world and is off by default; dedicated-server `allow_lock_on` is also off
+by default.
 
 ### Where lock-on works
 
 | Where you play | Lock-on (toggleable) | Who decides | Default |
 |---|---|---|---|
-| Your integrated world (private or opened to LAN) | ✅ / ❌ | you: **Allow LAN Friends** (in-game Config), explicit opt-in required because private status is not exposed | off |
-| A friend's LAN world, **host has the mod** | ✅ / ❌ | the host's **Allow LAN Friends** | off |
+| Your integrated world | ✅ / ❌ | the owner is always allowed | on for owner |
+| A friend's LAN world, **host has the mod** | ✅ / ❌ | the host's **Allow LAN Friends** controls guests | off for guests |
 | A dedicated server, **server has the mod** | ✅ / ❌ | the server owner: `allow_lock_on` in `config/enemy_target_lock-server.toml` | off |
-| Any server or LAN host **without the mod** (public servers, Realms, vanilla) | ❌ off | — | always off |
+| Any server or LAN host **without a compatible mod handshake** (public servers, Realms, vanilla) | ❌ off | — | this mod disconnects its client |
 
-Permission requires the host to install the mod and explicitly opt in. A server without the mod never
-allows it, and each host can revoke it with one switch.
+Guests require the host to install the mod and explicitly opt in. The owner is always allowed in their
+integrated world. A server without the mod never allows guests; if the optional permission channel is
+unsupported, this mod disconnects its client. Players without this mod are unaffected.
 
 ### How the host's permission is checked (consent handshake)
 
@@ -52,7 +53,7 @@ allows it, and each host can revoke it with one switch.
 | 2 | Host's game, **with the mod** | Answers with its switch: **Allow LAN Friends** in a game window that hosts LAN, `allow_lock_on` on a dedicated server. Remembers who asked. |
 | 3a | Your game, answer **yes** | Lock-on works in this world. |
 | 3b | Your game, answer **no** | You're disconnected with the reason: the host doesn't allow the mod in their world. |
-| 3c | Host **without the mod** | Never answers. Your game asks again after 1, 2, 4 and 8 seconds, then stops. Lock-on stays off; you stay connected. |
+| 3c | Host **without the mod** | The negotiated payload channel is unsupported, so your game disconnects immediately with an explanation. |
 | 4 | Host changes its switch | Its game sends the new answer once to everyone who asked (a "no" disconnects them). |
 | 5 | Your game leaves the world | The answer is forgotten; the next world is asked anew. |
 
@@ -66,7 +67,7 @@ grant active indefinitely.
 | Middle-click | Does what it normally does (pick block). |
 | Aim assist, projectile aim, clicks to target | Off. Clicks go where the crosshair is, as in vanilla. |
 | Chat | One line per world explains why lock-on is off. |
-| Joining | Never blocked: the mod is `side = "client"`, so it isn't part of the server's mod check, and its messages are optional. |
+| Joining | The server does not require this mod and unmodded players join normally. If you have this mod, it disconnects you when the server cannot negotiate its optional permission channel. |
 
 ### Network use
 

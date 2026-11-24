@@ -4,9 +4,9 @@
 //! world's owner explicitly allowed it. When you open your world to LAN, your game runs the
 //! world's server, so you are the owner:
 //!
-//! 1. **A friend asks once** on joining: "is lock-on allowed here?" Without an answer it
-//!    asks again after 1, 2, 4 and 8 seconds, then never again (a host without the mod
-//!    gets five tiny messages in all).
+//! 1. **A friend asks** on joining: "is lock-on allowed here?" If the optional channel is
+//!    unsupported, the client disconnects immediately. If the connection is still negotiating,
+//!    it retries after 1, 2, 4 and 8 seconds.
 //! 2. **The host answers** and remembers who asked. Its answer:
 //!    - a world hosted from a game window (LAN): the **Allow LAN Friends** setting (off by
 //!      default; true is affirmative permission);
@@ -18,12 +18,12 @@
 //! 4. **"No" means leave.** A friend whose host answers "not allowed" (or later turns it
 //!    off) is disconnected with a message saying why: that host doesn't want the mod in
 //!    their world. An answer ends the asking either way; "no" is never asked again.
-//! 5. **No answer means off.** A host without the mod, a vanilla server or any public
-//!    server never answers. It can't be told apart from one without the mod, so the player
-//!    stays connected and lock-on simply stays off.
+//! 5. **Unsupported means leave.** If the peer's negotiated payload table lacks this
+//!    optional channel, the client disconnects immediately. If the channel is supported but
+//!    no answer arrives, permission stays off while bounded retries continue.
 //!
-//! Both messages are optional payloads, so nobody is refused for not having the mod, and
-//! the mod stays `side = "client"`, so it never blocks joining any server.
+//! Both messages are optional payloads and the mod stays `side = "client"`; the server does
+//! not enforce a mod requirement, but this mod disconnects its own user from unsupported peers.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -58,9 +58,12 @@ pub struct LockOnAnswer {
 
 const ASK_CHANNEL: &str = "enemy_target_lock:ask_lock_on";
 const ANSWER_CHANNEL: &str = "enemy_target_lock:lock_on_answer";
-/// What a friend sees when a host says no.
-const REFUSED: &str = "This world's host doesn't allow Enemy Target Lock. Ask them to turn on \
-                       Allow LAN Friends in its settings, or join without the mod.";
+/// What a friend sees when the host explicitly refuses permission.
+const REFUSED: &str = "This world's host doesn't allow Enemy Target Lock. Ask them to enable it \
+                       in the world's settings, or join without the mod.";
+/// What a friend sees when the peer has no compatible permission handshake.
+const UNSUPPORTED: &str = "This server doesn't support Enemy Target Lock's permission check. \
+                           Join a server with the mod and host permission enabled, or remove the mod.";
 
 /// The payloads' version (bump it if `AskLockOn` or `LockOnAnswer` change shape).
 const VERSION: &str = "2";
@@ -137,8 +140,8 @@ pub fn register(registrar: &mut dyn Registrar) {
     let _ = ANSWER.set(answer);
 }
 
-/// Friend side, each tick in someone else's world: ask until the host answers, with growing
-/// gaps, at most `MAX_ASKS` times. Costs nothing once answered or given up.
+/// Friend side, each tick in someone else's world: retry transiently refused asks with growing
+/// gaps, at most `MAX_ASKS` times. Unsupported peers are disconnected immediately.
 pub fn ask_until_answered(host: &mut dyn ClientHost) {
     if HOST_ANSWERED.load(Ordering::Relaxed) {
         return;
@@ -153,8 +156,15 @@ pub fn ask_until_answered(host: &mut dyn ClientHost) {
         return;
     }
     if let Some(ask) = ASK.get() {
-        // A host without the mod doesn't take it (`UnsupportedPeer`): no answer, so no lock-on.
-        let _ = ask.send(host, &AskLockOn { protocol: VarInt(PROTOCOL) });
+        if let Err(error) = ask.send(host, &AskLockOn { protocol: VarInt(PROTOCOL) }) {
+            if peer_lacks_permission_channel(&error) {
+                HOST_ANSWERED.store(true, Ordering::Relaxed);
+                if let Err(error) = host.disconnect(Some(mod_api::Text::literal(UNSUPPORTED))) {
+                    eprintln!("enemy_target_lock: could not disconnect unsupported peer: {error:?}");
+                }
+                return;
+            }
+        }
     }
     ASKS_SENT.store(sent + 1, Ordering::Relaxed);
     TICKS_TO_ASK.store(FIRST_RETRY_TICKS << sent, Ordering::Relaxed);
@@ -223,4 +233,22 @@ pub fn forget() {
 
 fn host_state() -> std::sync::MutexGuard<'static, HostState> {
     HOST.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn peer_lacks_permission_channel(error: &mod_api::PayloadSendError) -> bool {
+    matches!(error, mod_api::PayloadSendError::UnsupportedPeer(_))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_definitively_unsupported_peer_is_rejected_immediately() {
+        assert!(peer_lacks_permission_channel(&mod_api::PayloadSendError::UnsupportedPeer(
+            PayloadId(ASK_CHANNEL.into())
+        )));
+        assert!(!peer_lacks_permission_channel(&mod_api::PayloadSendError::NotNegotiated));
+        assert!(!peer_lacks_permission_channel(&mod_api::PayloadSendError::Backpressure));
+    }
 }

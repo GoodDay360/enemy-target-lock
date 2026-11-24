@@ -155,7 +155,8 @@ The defaults are the values described in this spec.
 
 | Group | Settings |
 |---|---|
-| Multiplayer | Allow LAN Friends (off by default; required when private-world status cannot be confirmed) |
+| Integrated-world owner | Always allowed |
+| LAN guests | Allow LAN Friends (off by default) |
 | Targeting | Target Players, Lock Range, Lock Cone |
 | Lock | Release Distance, Release When Hidden, Switch Target on Kill |
 | Aim | Aim Height, Aim Speed, Max Turn Speed, Projectile Aim |
@@ -180,23 +181,26 @@ they only run where the world's owner allowed it:
 
 | Where | Lock-on |
 |---|---|
-| Your integrated world (private or opened to LAN) | off unless **Allow LAN Friends** is explicitly enabled; the API does not expose authoritative private/LAN status |
+| Your integrated world | on for its owner; **Allow LAN Friends** controls guests and is off by default |
 | A friend's LAN world | on only if their mod answers "allowed" |
 | A dedicated server with the mod | off unless `allow_lock_on` is `true` in `config/enemy_target_lock-server.toml`; the default is off |
-| Any other server, Realms, a host without the mod | off |
+| Any other server, Realms, a host without the mod | off; this client disconnects if the permission channel is unsupported |
 
-- **Consent handshake** (`lan.rs`, protocol 2): a friend's game sends `enemy_target_lock:ask_lock_on` on joining,
-  retrying only while there's no answer (after 1, 2, 4 and 8 seconds, then never). The host's game replies on
+- **Consent handshake** (`lan.rs`, protocol 2): a friend's game sends `enemy_target_lock:ask_lock_on` on joining.
+  If the peer's negotiated payload table definitively lacks the optional channel (`UnsupportedPeer`), the client
+  disconnects immediately. While the protocol is still negotiating or a send is transiently refused, it retries
+  after 1, 2, 4 and 8 seconds. The host's game replies on
   `enemy_target_lock:lock_on_answer` with its **Allow LAN Friends** setting (off by default) and remembers who
   asked; when the host changes the setting, its game sends the new answer to them. Periodic heartbeats refresh
   permission so lost updates expire.
 - **"No" disconnects:** a friend whose host answers "not allowed", or turns it off later, is disconnected with
   a message saying why.
-- **No answer means off:** a host without the mod, a vanilla server or a public server never answers. That
-  can't be told apart from not having the mod, so the player stays connected and lock-on stays off.
-- Both payloads are `optional()`, and the mod stays `side = "client"`, so it never blocks a join and
-  players or hosts without it are never refused.
-- "Your own world" is `client_server().integrated_local`; the API does not expose whether it is private or open to LAN, so it requires explicit **Allow LAN Friends** opt-in.
+- **Unsupported channel means leave:** a host without a compatible mod does not negotiate the optional
+  permission channel, so this mod disconnects its own user immediately. A peer that supports the channel but
+  doesn't answer remains fail-closed; lock-on stays off while bounded retries continue.
+- Both payloads are `optional()`, and the mod stays `side = "client"`: the server does not require this mod,
+  and players who don't have it are not refused.
+- "Your own world" is `client_server().integrated_local`, which identifies the local owner. The owner is always allowed; **Allow LAN Friends** separately controls guests and is off by default.
 - Where it's off, middle click does what it normally does, and a chat line explains why, once a session.
 - **Dedicated servers** (`server_config.rs`) don't use Allow LAN Friends. They answer the same handshake with
   `allow_lock_on` from their own `config/enemy_target_lock-server.toml` (a Horizon `Server` config, read per
@@ -223,7 +227,7 @@ they only run where the world's owner allowed it:
 | `src/view_lag.rs` | First-person view trailing the real aim, fading in/out (pure math) |
 | `src/cinematic.rs` | Third-person lock camera: where it sits, easing in/out, FOV scale (pure math) |
 | `src/attack.rs` | Point clicks at the locked target (`direct_clicks_at`) |
-| `src/session.rs` | Where targeting is allowed (explicit opt-in for integrated worlds because private/LAN status is not exposed, or a remote host's consent) |
+| `src/session.rs` | Where targeting is allowed (integrated-world owner, or a remote host's consent for guests) |
 | `src/lan.rs` | The consent handshake: ask the host, answer friends |
 | `src/server_config.rs` | A dedicated server's own switch, `allow_lock_on` (off by default) |
 | `src/scan.rs` | World lookups: player view, nearby candidates, line of sight, camera wall clipping, camera view checks, held projectile |
@@ -312,7 +316,7 @@ they only run where the world's owner allowed it:
   - [ ] The player dies or changes dimension
   - [ ] Passive mobs and players can be locked; boats, item frames and armor stands can't
   - [ ] Nothing happens while a menu or chat is open
-  - [ ] On a server or a host without the mod: no lock-on, middle click picks blocks, one chat line explains
+  - [ ] On a server or a host without the mod: the client disconnects when the peer reports the permission channel unsupported
   - [ ] LAN, default (Allow LAN Friends on): a friend with the mod gets lock-on; turning it off on the host
         disconnects them with the message; with it off, a friend with the mod who joins is disconnected
   - [ ] A friend without the mod joins any LAN world normally

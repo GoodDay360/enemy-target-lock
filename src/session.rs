@@ -4,10 +4,9 @@
 //! as aim assistance, which many servers forbid (and the Horizon mod registry requires
 //! such features to stay off on servers that haven't allowed them). So they run:
 //!
-//! - **in your own integrated world**: when **Allow LAN Friends** is on. The API does not expose
-//!   whether an integrated world is private or open to LAN, so the setting is the explicit opt-in;
+//! - **in your own integrated world**: always for the integrated-server owner;
 //! - **in a friend's LAN world**: when their copy of the mod answered "allowed" to the
-//!   consent handshake (`lan.rs`);
+//!   consent handshake (`lan.rs`), controlled by the owner's **Allow LAN Friends** setting;
 //! - **anywhere else** (servers, Realms, hosts without the mod): never.
 //!
 //! The rest of the mod (settings, HUD) loads everywhere; it just has nothing to do.
@@ -17,16 +16,14 @@ use std::sync::Mutex;
 
 use mod_api::ClientHost;
 
-use crate::config;
 use crate::lan;
 
 /// Whether targeting may run.
-/// - `own_world`: this window runs the world (`integrated_local`);
-/// - `lan_friends`: the host's explicit **Allow LAN Friends** opt-in;
+/// - `own_world`: this window owns the integrated server (`integrated_local`);
 /// - `host_allows`: what the server this window joined said.
-pub fn allowed(own_world: bool, lan_friends: bool, host_allows: bool) -> bool {
+pub fn allowed(own_world: bool, host_allows: bool) -> bool {
     if own_world {
-        lan_friends
+        true
     } else {
         host_allows
     }
@@ -76,7 +73,7 @@ impl SessionGate {
         if !server.integrated_local {
             lan::ask_until_answered(host);
         }
-        let allowed = allowed(server.integrated_local, config::get().lan_friends, lan::host_allows());
+        let allowed = allowed(server.integrated_local, lan::host_allows());
         self.allowed.store(allowed, Ordering::Relaxed);
     }
 
@@ -109,15 +106,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn integrated_world_requires_explicit_opt_in() {
-        assert!(!allowed(true, false, false), "unknown private status is disabled");
-        assert!(allowed(true, true, false), "explicit host opt-in");
+    fn integrated_world_owner_is_always_allowed() {
+        assert!(allowed(true, false), "the owner of the integrated world is trusted");
     }
 
     #[test]
     fn someone_elses_world() {
-        assert!(allowed(false, false, true), "a LAN host with the mod allowed it");
-        assert!(!allowed(false, false, false), "a host without the mod, or one that said no");
-        assert!(!allowed(false, true, false), "your own setting doesn't count elsewhere");
+        assert!(allowed(false, true), "a LAN host with the mod allowed it");
+        assert!(!allowed(false, false), "a host without the mod, or one that said no");
     }
 }
