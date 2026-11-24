@@ -1,6 +1,7 @@
 # Enemy Target Lock
 
-A native Rust mod for Horizon. The first feature will be an optional enemy auto-target lock.
+A client-side native Rust mod for Horizon. It gently corrects aim toward hostile vanilla mobs
+or other players only while the crosshair is already on them.
 
 ## Development
 

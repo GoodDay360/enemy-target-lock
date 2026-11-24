@@ -1,10 +1,10 @@
 id = "enemy_target_lock"
 name = "Enemy Target Lock"
 version = "0.1.0"
-description = "An optional enemy auto-target lock for Horizon."
+description = "Subtle aim correction while a hostile mob or player is under the crosshair."
 authors = []
 api = "0.2"
-side = "both"
+side = "client"
 capabilities = ["registries"]
 
 [native]
