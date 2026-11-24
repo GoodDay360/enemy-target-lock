@@ -1,7 +1,6 @@
 # Enemy Target Lock
 
-A Native Rust mod for [Horizon](https://github.com/horizon-rust/horizon): lock onto a mob and
-fight without wrestling the camera.
+A Native Rust mod for [Horizon](https://github.com/horizon-rust/horizon): lock onto a mob, inspired by soulslike games.
 
 ## Features
 
