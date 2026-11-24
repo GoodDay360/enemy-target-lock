@@ -8,11 +8,9 @@
 //! Pure math only; `lib.rs` applies it in the `camera_pose` hook.
 
 use crate::camera;
+use crate::config;
 use crate::smooth;
 
-/// How quickly the drawn view catches up with the real aim (per second).
-/// 8 closes about 87% of the gap in a quarter second.
-pub const VIEW_RESPONSE_PER_SECOND: f32 = 8.0;
 /// How quickly the lag fades in when locking and out after releasing.
 const BLEND_RESPONSE: f32 = 6.0;
 
@@ -37,7 +35,7 @@ impl ViewLag {
 
         let mut angles = self.angles.unwrap_or(aim);
         let turn = camera::angle_between(angles[0], angles[1], aim[0], aim[1])
-            * smooth::ease_fraction(VIEW_RESPONSE_PER_SECOND, seconds);
+            * smooth::ease_fraction(config::get().view_speed, seconds);
         if let Some(turned) = camera::step_toward(angles[0], angles[1], aim[0], aim[1], turn) {
             angles = turned;
         }

@@ -4,26 +4,16 @@
 //!
 //! Pure math only. `lib.rs` feeds it positions and the frame time in `camera_pose`,
 //! and `scan::clip_camera` keeps it out of walls.
+//!
+//! Where it sits, where it looks, its FOV and how quickly it moves come from the
+//! `[third_person]` config section.
 
 use crate::camera;
+use crate::config;
 use crate::smooth;
 
-/// How far behind the player the camera sits (blocks).
-const DISTANCE: f64 = 3.6;
-/// How far to the right of the player (over the right shoulder).
-const SHOULDER: f64 = 0.9;
-/// How far above the player's eyes.
-const HEIGHT: f64 = 0.35;
-/// Where the camera looks along the line from the player (0) to the target (1).
-const FOCUS: f64 = 0.55;
-
-/// Field of view while the cinematic camera is fully in, as a share of the normal FOV.
-pub const FOV_SCALE: f32 = 0.85;
-
-/// How quickly (per second) the camera's position, its direction, and the blend
-/// between it and the normal camera catch up. Lower is slower and smoother.
-const POSITION_RESPONSE: f32 = 5.0;
-const ANGLE_RESPONSE: f32 = 6.0;
+/// How quickly (per second) the blend between the normal camera and the cinematic one
+/// catches up when locking and releasing.
 const BLEND_RESPONSE: f32 = 5.0;
 
 /// A camera placement: position, yaw and pitch in degrees.
@@ -37,6 +27,7 @@ pub struct Pose {
 /// Where the camera wants to be: behind the player on the side away from the target,
 /// over the right shoulder, looking at a point between the two.
 pub fn desired_pose(eye: [f64; 3], target: [f64; 3]) -> Option<Pose> {
+    let config = config::get();
     let away = [eye[0] - target[0], eye[2] - target[2]];
     let length = away[0].hypot(away[1]);
     if !length.is_finite() || length < 1e-6 {
@@ -46,11 +37,11 @@ pub fn desired_pose(eye: [f64; 3], target: [f64; 3]) -> Option<Pose> {
     // Looking along -back, the right-hand side is (back.z, -back.x) in Minecraft's axes.
     let right = [back[1], -back[0]];
     let position = [
-        eye[0] + back[0] * DISTANCE + right[0] * SHOULDER,
-        eye[1] + HEIGHT,
-        eye[2] + back[1] * DISTANCE + right[1] * SHOULDER,
+        eye[0] + back[0] * config.camera_distance + right[0] * config.camera_shoulder,
+        eye[1] + config.camera_height,
+        eye[2] + back[1] * config.camera_distance + right[1] * config.camera_shoulder,
     ];
-    let focus = smooth::lerp(eye, target, FOCUS);
+    let focus = smooth::lerp(eye, target, config.camera_focus);
     let aim = camera::aim_at(position, focus)?;
     Some(Pose { position, yaw: aim.yaw, pitch: aim.pitch })
 }
@@ -81,10 +72,11 @@ impl CinematicCamera {
             return normal;
         }
 
+        let config = config::get();
         let goal = desired.or(self.pose).unwrap_or(normal);
         let mut pose = self.pose.unwrap_or(normal);
-        pose.position = smooth::lerp(pose.position, goal.position, f64::from(smooth::ease_fraction(POSITION_RESPONSE, seconds)));
-        let turn = camera::angle_between(pose.yaw, pose.pitch, goal.yaw, goal.pitch) * smooth::ease_fraction(ANGLE_RESPONSE, seconds);
+        pose.position = smooth::lerp(pose.position, goal.position, f64::from(smooth::ease_fraction(config.camera_position_speed, seconds)));
+        let turn = camera::angle_between(pose.yaw, pose.pitch, goal.yaw, goal.pitch) * smooth::ease_fraction(config.camera_angle_speed, seconds);
         if let Some([yaw, pitch]) = camera::step_toward(pose.yaw, pose.pitch, goal.yaw, goal.pitch, turn) {
             pose.yaw = yaw;
             pose.pitch = pitch;
@@ -108,6 +100,8 @@ fn blend_poses(a: Pose, b: Pose, t: f32) -> Pose {
 mod tests {
     use super::*;
 
+    use crate::config::Config;
+
     const EYE: [f64; 3] = [0.0, 1.6, 0.0];
     const TARGET: [f64; 3] = [0.0, 1.6, 10.0];
 
@@ -115,9 +109,10 @@ mod tests {
     fn sits_behind_the_player_over_the_right_shoulder_facing_the_target() {
         // Target due south (+z): behind is -z; facing south, the right-hand side is -x (west).
         let pose = desired_pose(EYE, TARGET).unwrap();
-        assert!((pose.position[2] - -DISTANCE).abs() < 1e-9);
-        assert!((pose.position[0] - -SHOULDER).abs() < 1e-9);
-        assert!((pose.position[1] - (EYE[1] + HEIGHT)).abs() < 1e-9);
+        let defaults = Config::DEFAULT;
+        assert!((pose.position[2] - -defaults.camera_distance).abs() < 1e-9);
+        assert!((pose.position[0] - -defaults.camera_shoulder).abs() < 1e-9);
+        assert!((pose.position[1] - (EYE[1] + defaults.camera_height)).abs() < 1e-9);
         assert!(pose.yaw.abs() < 10.0, "roughly facing south, got {}", pose.yaw);
     }
 

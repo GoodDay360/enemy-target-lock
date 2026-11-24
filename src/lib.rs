@@ -18,6 +18,10 @@
 //! - `ballistics`: aiming bows, tridents and thrown items so they land
 //! - `camera`: aim angles and turn limiting
 //! - `hud`: the dot on the locked target, hiding the crosshair
+//! - `shapes`: round HUD shapes built from quads
+//! - `config`: the settings, their defaults and the values in use
+//! - `config_file`: the commented config file in `config/`
+//! - `sync`: keeping the config file and the in-game settings page in step
 use std::sync::Mutex;
 
 use mod_api::{self, ClientHost, CrosshairTarget, EntityRef, Flow, Hooks};
@@ -26,12 +30,16 @@ mod attack;
 mod ballistics;
 mod camera;
 mod cinematic;
+mod config;
+mod config_file;
 mod deaths;
 mod hud;
 mod input;
 mod lock;
 mod scan;
+mod shapes;
 mod smooth;
+mod sync;
 mod targeting;
 mod view_lag;
 
@@ -42,6 +50,7 @@ struct Mod {
     deaths: deaths::DeathWatch,
     cinematic: Mutex<cinematic::CinematicCamera>,
     view_lag: Mutex<view_lag::ViewLag>,
+    settings_sync: sync::SettingsSync,
     camera_clock: Mutex<smooth::FrameClock>,
 }
 
@@ -94,7 +103,7 @@ impl Mod {
             .into_iter()
             .filter(|c| c.target != target && !dying.contains(&c.target))
             .collect();
-        let next = targeting::pick_nearest(&candidates);
+        let next = if config::get().switch_on_death { targeting::pick_nearest(&candidates) } else { None };
         self.lock.with(|state| match next {
             Some(next) => state.switch_to(next),
             None => state.release(),
@@ -105,7 +114,7 @@ impl Mod {
     /// Each tick while locked: record positions for smooth turning, or release the
     /// target once it's gone, too far away, or hidden for too long.
     fn update_lock(&self, host: &dyn ClientHost, view: &scan::View, target: EntityRef) {
-        let in_range = scan::aim_at_entity(host, view, target).is_some_and(|aim| aim.distance <= lock::MAX_LOCK_DISTANCE);
+        let in_range = scan::aim_at_entity(host, view, target).is_some_and(|aim| aim.distance <= config::get().max_lock_distance);
         let visible = in_range && scan::has_line_of_sight(host, view, target);
         self.lock.with(|state| {
             if !in_range || !state.track_visibility(visible) || !Self::record_positions(host, view, target, state) {
@@ -135,7 +144,7 @@ impl Mod {
         let Some(view) = scan::player_view(host) else {
             return;
         };
-        let projectile = scan::held_projectile(host, &view);
+        let projectile = if config::get().projectile_aim { scan::held_projectile(host, &view) } else { None };
         let (yaw, pitch) = match projectile.and_then(|p| ballistics::solve(p, scan::launch_point(eye), point, target_velocity)) {
             Some(shot) => (shot.yaw, shot.pitch),
             None => match camera::aim_at(eye, point) {
@@ -143,7 +152,7 @@ impl Mod {
                 None => return,
             },
         };
-        let turned = smooth::ease_toward_at(smooth::AIM_RESPONSE_PER_SECOND, view.yaw, view.pitch, yaw, pitch, seconds);
+        let turned = smooth::ease_toward_at(config::get().aim_speed, view.yaw, view.pitch, yaw, pitch, seconds);
         if let Some([yaw, pitch]) = turned {
             let _ = host.set_local_rotation(yaw, pitch);
         }
@@ -152,7 +161,7 @@ impl Mod {
     /// Each frame: where the cinematic camera should be (None when it should ease out:
     /// not locked, or not in third person from behind).
     fn cinematic_goal(&self, host: &dyn ClientHost, partial_tick: f32) -> Option<cinematic::Pose> {
-        if !self.lock.is_locked() || !scan::third_person_behind(host) {
+        if !self.lock.is_locked() || !config::get().cinematic_camera || !scan::third_person_behind(host) {
             return None;
         }
         let (eye, point) = self.lock.with(|state| state.track.at(partial_tick))?;
@@ -163,6 +172,9 @@ impl Mod {
 
     /// Each tick while not locked: nudge toward the mob under the crosshair.
     fn assist(&self, host: &mut dyn ClientHost, view: &scan::View) {
+        if !config::get().assist_enabled {
+            return;
+        }
         let Some(CrosshairTarget::Entity { entity, .. }) = host.crosshair_target() else {
             return;
         };
@@ -180,6 +192,49 @@ impl Mod {
 
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
+    /// Put every setting on the mod's page in Options > Mods (its Config button).
+    fn register(&self, registrar: &mut dyn mod_api::Registrar, _context: &mod_api::RegistrationContext) {
+        let defaults = config::Config::DEFAULT;
+        for setting in config::SETTINGS {
+            let label = config::label_key(setting.key);
+            let spec = match setting.kind {
+                config::Kind::Toggle { get, .. } => mod_api::SettingSpec::toggle(setting.key, label, get(&defaults)),
+                config::Kind::Range { min, max, step, get, .. } => {
+                    mod_api::SettingSpec::range(setting.key, label, min, max, step, get(&defaults))
+                }
+                config::Kind::Color { get, .. } => mod_api::SettingSpec::color(setting.key, label, get(&defaults)),
+            };
+            if let Err(error) = registrar.register_setting(spec.tooltip(config::tooltip_key(setting.key))) {
+                eprintln!("enemy_target_lock: setting {} was refused: {error}", setting.key);
+            }
+        }
+    }
+
+    /// The player changed a setting on the mod's page: use it and save it to the config file.
+    fn setting_changed(&self, host: &mut dyn ClientHost, _event: &mut mod_api::SettingChangedEvent) {
+        self.settings_sync.game_changed(host);
+    }
+
+    /// The config file, written with the defaults when it's missing.
+    fn register_configs(&self, _side: mod_api::HostSide, event: &mut mod_api::RegisterConfigsEvent) {
+        let default = config_file::to_text(&config::Config::DEFAULT);
+        event.configs.push(mod_api::Config::new(sync::MOD_ID, mod_api::ConfigKind::Client, &default));
+    }
+
+    /// The config file was read at startup.
+    fn config_loading(&self, _side: mod_api::HostSide, event: &mut mod_api::ConfigLoadingEvent) {
+        if event.config.mod_id == sync::MOD_ID && event.config.file == config_file::FILE_NAME {
+            self.settings_sync.file_read(&event.config.text);
+        }
+    }
+
+    /// The config file was saved while the game runs.
+    fn config_reloading(&self, _side: mod_api::HostSide, event: &mut mod_api::ConfigReloadingEvent) {
+        if event.config.mod_id == sync::MOD_ID && event.config.file == config_file::FILE_NAME {
+            self.settings_sync.file_read(&event.config.text);
+        }
+    }
+
     /// Middle click toggles the lock. The click is swallowed only when it locks or
     /// unlocks, so middle-clicking a block with nothing to lock still picks it.
     /// (Left and right clicks while locked go to the target through `attack.rs`.)
@@ -215,6 +270,7 @@ impl Hooks for Mod {
     }
 
     fn client_tick_pre(&self, host: &mut dyn ClientHost, _event: &mut mod_api::ClientTickPreEvent) {
+        self.settings_sync.copy_to_game_if_pending(host);
         if host.playing()
             && let Some(view) = scan::player_view(host)
         {
@@ -269,7 +325,7 @@ impl Hooks for Mod {
     fn compute_fov(&self, _host: &dyn ClientHost, event: &mut mod_api::ComputeFovEvent) {
         let blend = self.cinematic.lock().map_or(0.0, |cam| cam.blend());
         if blend > 0.0 {
-            event.degrees *= 1.0 + (cinematic::FOV_SCALE - 1.0) * blend;
+            event.degrees *= 1.0 + (config::get().fov_scale - 1.0) * blend;
         }
     }
 
@@ -286,12 +342,13 @@ impl Hooks for Mod {
 
     /// The crosshair is hidden while locked; the lock dot takes its place.
     fn gui_layer_pre(&self, _host: &dyn ClientHost, event: &mut mod_api::GuiLayerPreEvent) -> Flow {
-        if self.lock.is_locked() && event.layer == hud::CROSSHAIR_LAYER { Flow::Cancel } else { Flow::Continue }
+        let hide = self.lock.is_locked() && config::get().hide_crosshair && event.layer == hud::CROSSHAIR_LAYER;
+        if hide { Flow::Cancel } else { Flow::Continue }
     }
 
     /// A dot marks the locked target, at the same blended position the camera follows.
     fn gui_render_post(&self, host: &dyn ClientHost, event: &mut mod_api::GuiRenderPostEvent) {
-        if event.gui_hidden || !self.lock.is_locked() {
+        if event.gui_hidden || !self.lock.is_locked() || !config::get().lock_dot {
             return;
         }
         let partial_tick = host.camera().map_or(1.0, |camera| camera.partial_tick);

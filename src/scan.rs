@@ -5,7 +5,8 @@ use mod_api::{ClientHost, ClipBlock, ClipFluid, EntityRef, Hand, LevelRef};
 use crate::ballistics::{self, Projectile};
 
 use crate::camera::{self, Aim};
-use crate::targeting::{self, Candidate, LOCK_RANGE};
+use crate::config;
+use crate::targeting::{self, Candidate};
 
 /// The local player's eye position and view direction.
 #[derive(Clone, Copy, Debug)]
@@ -87,13 +88,14 @@ pub fn has_line_of_sight(host: &dyn ClientHost, view: &View, target: EntityRef) 
     to_hit + 0.3 >= to_target
 }
 
-/// Every lockable mob or player within `LOCK_RANGE` of the player, with its aim and visibility.
+/// Every lockable mob or player within the lock range of the player, with its aim and visibility.
 pub fn nearby_candidates(host: &dyn ClientHost, view: &View) -> Vec<Candidate<EntityRef>> {
     let Some(level) = client_level(host) else {
         return Vec::new();
     };
-    let min = view.eye.map(|v| v - LOCK_RANGE);
-    let max = view.eye.map(|v| v + LOCK_RANGE);
+    let range = config::get().lock_range;
+    let min = view.eye.map(|v| v - range);
+    let max = view.eye.map(|v| v + range);
     let Some(entities) = level.entities_in(host, min, max) else {
         return Vec::new();
     };

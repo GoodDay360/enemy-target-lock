@@ -1,11 +1,6 @@
 //! Aim math: where to look, and how far to turn each tick.
 
-/// Subtle assist (no lock): only acts within this many degrees of the target...
-pub const ASSIST_MAX_ANGLE_DEGREES: f32 = 8.0;
-/// ...and turns at most this much per tick.
-pub const ASSIST_STEP_DEGREES: f32 = 0.25;
-/// How far up the target's bounding box to aim (0 = feet, 1 = top): roughly the chest.
-const AIM_HEIGHT: f64 = 0.65;
+use crate::config;
 
 /// Where to look to aim at a target, and how far away it is.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -15,11 +10,12 @@ pub struct Aim {
     pub distance: f64,
 }
 
-/// The point on a target's bounding box the camera aims at (chest height, centered).
+/// The point on a target's bounding box to aim at: centered, `aim_height` of the way up
+/// (by default roughly the chest).
 pub fn aim_point(bounds: [[f64; 3]; 2]) -> [f64; 3] {
     [
         (bounds[0][0] + bounds[1][0]) / 2.0,
-        bounds[0][1] + (bounds[1][1] - bounds[0][1]) * AIM_HEIGHT,
+        bounds[0][1] + (bounds[1][1] - bounds[0][1]) * config::get().aim_height,
         (bounds[0][2] + bounds[1][2]) / 2.0,
     ]
 }
@@ -68,10 +64,11 @@ pub fn step_toward(yaw: f32, pitch: f32, target_yaw: f32, target_pitch: f32, max
 
 /// The subtle assist: a small `step_toward`, only when the target is already near the crosshair.
 pub fn assist_step(yaw: f32, pitch: f32, target_yaw: f32, target_pitch: f32) -> Option<[f32; 2]> {
-    if angle_between(yaw, pitch, target_yaw, target_pitch) > ASSIST_MAX_ANGLE_DEGREES {
+    let config = config::get();
+    if angle_between(yaw, pitch, target_yaw, target_pitch) > config.assist_max_angle_degrees {
         return None;
     }
-    step_toward(yaw, pitch, target_yaw, target_pitch, ASSIST_STEP_DEGREES)
+    step_toward(yaw, pitch, target_yaw, target_pitch, config.assist_step_degrees)
 }
 
 #[cfg(test)]
@@ -88,7 +85,7 @@ mod tests {
     #[test]
     fn assist_is_limited_and_stops_outside_the_assist_cone() {
         let step = assist_step(0.0, 0.0, 5.0, 0.0).unwrap();
-        assert!((step[0] - ASSIST_STEP_DEGREES).abs() < 0.001);
+        assert!((step[0] - config::Config::DEFAULT.assist_step_degrees).abs() < 0.001);
         assert!(assist_step(0.0, 0.0, 9.0, 0.0).is_none());
     }
 

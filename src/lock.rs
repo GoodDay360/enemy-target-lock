@@ -4,12 +4,8 @@ use std::sync::Mutex;
 
 use mod_api::EntityRef;
 
+use crate::config;
 use crate::smooth::Track;
-
-/// The lock is released when the target gets farther away than this (blocks).
-pub const MAX_LOCK_DISTANCE: f64 = 32.0;
-/// The lock is released after the target has been out of sight this many ticks (3 s).
-pub const MAX_HIDDEN_TICKS: u32 = 60;
 
 /// What the lock is doing right now.
 #[derive(Clone, Copy, Debug, Default)]
@@ -40,7 +36,7 @@ impl LockState {
     /// Record this tick's line of sight; returns false when the lock should end.
     pub fn track_visibility(&mut self, visible: bool) -> bool {
         self.hidden_ticks = if visible { 0 } else { self.hidden_ticks + 1 };
-        self.hidden_ticks <= MAX_HIDDEN_TICKS
+        self.hidden_ticks <= config::get().max_hidden_ticks()
     }
 }
 

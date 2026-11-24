@@ -11,13 +11,7 @@
 use std::time::Instant;
 
 use crate::camera;
-
-/// How quickly the player's real aim turns to the target while locked (per second).
-/// Fast, so shots and clicks go where they should; what's drawn trails it smoothly
-/// (`view_lag.rs` in first person, `cinematic.rs` in third person).
-pub const AIM_RESPONSE_PER_SECOND: f32 = 20.0;
-/// The fastest the camera turns, in degrees per second, so big swings stay readable.
-const MAX_TURN_DEGREES_PER_SECOND: f32 = 540.0;
+use crate::config;
 /// Remaining error below this (degrees) is left alone, so the view rests instead of trembling.
 const DEAD_ZONE_DEGREES: f32 = 0.05;
 
@@ -71,7 +65,7 @@ pub fn ease_toward_at(response: f32, yaw: f32, pitch: f32, target_yaw: f32, targ
         return None;
     }
     let eased = error * ease_fraction(response, seconds);
-    let step = eased.min(MAX_TURN_DEGREES_PER_SECOND * seconds);
+    let step = eased.min(config::get().max_turn_degrees_per_second * seconds);
     camera::step_toward(yaw, pitch, target_yaw, target_pitch, step)
 }
 
@@ -124,22 +118,22 @@ mod tests {
     #[test]
     fn easing_is_frame_rate_independent() {
         // One 1/30 s frame should end up where two 1/60 s frames do.
-        let one = ease_toward_at(AIM_RESPONSE_PER_SECOND, 0.0, 0.0, 10.0, 0.0, 1.0 / 30.0).unwrap();
-        let half = ease_toward_at(AIM_RESPONSE_PER_SECOND, 0.0, 0.0, 10.0, 0.0, 1.0 / 60.0).unwrap();
-        let two = ease_toward_at(AIM_RESPONSE_PER_SECOND, half[0], half[1], 10.0, 0.0, 1.0 / 60.0).unwrap();
+        let one = ease_toward_at(config::Config::DEFAULT.aim_speed, 0.0, 0.0, 10.0, 0.0, 1.0 / 30.0).unwrap();
+        let half = ease_toward_at(config::Config::DEFAULT.aim_speed, 0.0, 0.0, 10.0, 0.0, 1.0 / 60.0).unwrap();
+        let two = ease_toward_at(config::Config::DEFAULT.aim_speed, half[0], half[1], 10.0, 0.0, 1.0 / 60.0).unwrap();
         assert!((one[0] - two[0]).abs() < 0.01, "{one:?} vs {two:?}");
     }
 
     #[test]
     fn easing_never_overshoots_and_rests_when_close() {
-        let step = ease_toward_at(AIM_RESPONSE_PER_SECOND, 0.0, 0.0, 10.0, 0.0, 10.0).unwrap();
+        let step = ease_toward_at(config::Config::DEFAULT.aim_speed, 0.0, 0.0, 10.0, 0.0, 10.0).unwrap();
         assert!(step[0] <= 10.0 + 1e-4);
-        assert_eq!(ease_toward_at(AIM_RESPONSE_PER_SECOND, 0.0, 0.0, 0.01, 0.0, 1.0 / 60.0), None);
+        assert_eq!(ease_toward_at(config::Config::DEFAULT.aim_speed, 0.0, 0.0, 0.01, 0.0, 1.0 / 60.0), None);
     }
 
     #[test]
     fn big_swings_are_speed_limited() {
-        let step = ease_toward_at(AIM_RESPONSE_PER_SECOND, 0.0, 0.0, 170.0, 0.0, 0.1).unwrap();
-        assert!((step[0] - MAX_TURN_DEGREES_PER_SECOND * 0.1).abs() < 0.01);
+        let step = ease_toward_at(config::Config::DEFAULT.aim_speed, 0.0, 0.0, 170.0, 0.0, 0.1).unwrap();
+        assert!((step[0] - config::Config::DEFAULT.max_turn_degrees_per_second * 0.1).abs() < 0.01);
     }
 }

@@ -12,8 +12,13 @@ A client-side native Rust mod for Horizon.
 - Bows, crossbows, tridents and thrown items aim for drop and target movement while locked.
 - Lock in **third person** (F5) for a cinematic over-the-shoulder camera: the player turns to the
   target while the camera drifts smoothly behind, with a slightly narrower FOV.
-- The locked target is marked with a dot, and the crosshair is hidden while locked.
+- The locked target is marked with a round, see-through dot (size, opacity, colour and outline
+  are adjustable), and the crosshair is hidden while locked.
 - When not locked, a subtle aim assist gently corrects aim toward the mob under the crosshair.
+
+Everything is adjustable in-game (**Options > Mods > Enemy Target Lock > Config**) or in the
+commented file `config/enemy_target_lock-client.toml`. The two stay in sync, and changes apply
+while the game runs.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full plan.
 
