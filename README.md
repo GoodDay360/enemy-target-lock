@@ -9,8 +9,12 @@ This is a Horizon-native mod project, not a Fabric/Forge mod. The launcher compi
 the exact Horizon build pinned in `horizon-mod.toml`.
 - Replace "My Instance" with your instance
 - `horizon-launcher instance list` to show available instances
-```powershell
+```
 horizon-launcher native-build . --instance "My Instance" --trust-native-code
+```
+- Start the game after build
+```
+horizon-launcher play
 ```
 
 The project intentionally stays one Cargo package: Horizon builds the mod from this root.
