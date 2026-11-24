@@ -1,0 +1,1 @@
+horizon-launcher native-build . --instance "horizon" --trust-native-code
